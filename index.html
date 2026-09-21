@@ -19,6 +19,7 @@
       --scene-width: 150px;
     }
     * { box-sizing: border-box; }
+    html { scrollbar-gutter: stable; }
     html { min-height: 100%; background: var(--bg); }
     body {
       min-height: 100vh;
@@ -453,6 +454,7 @@
       overflow-x: hidden;
       overflow-y: auto;
       overscroll-behavior: contain;
+      scrollbar-gutter: stable;
       scrollbar-color: #3d4656 transparent;
     }
     .player-shell { position: relative; }
@@ -601,7 +603,7 @@
       cursor: pointer;
     }
     .scene-card:hover { border-color: var(--accent-2); transform: translateY(-1px); }
-    .scene-card img { display: block; width: 100%; height: 100%; object-fit: cover; }
+    .scene-card img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
     .scene-time {
       position: absolute;
       right: 5px;
@@ -613,6 +615,7 @@
       font-size: 10px;
       font-variant-numeric: tabular-nums;
     }
+    .scene-unavailable { flex: 0 0 var(--scene-width); width: var(--scene-width); aspect-ratio: 16 / 9; border-radius: 8px; display: grid; place-items: center; color: var(--muted); font-size: 11px; background: #151b25; animation: none; }
     .scene-placeholder {
       flex: 0 0 var(--scene-width);
       width: var(--scene-width);
@@ -2033,20 +2036,21 @@
         });
       }
 
-      function appendSceneCard(time, imageUrl) {
-        const button = document.createElement('button');
-        button.className = 'scene-card';
+      function appendSceneCard(time, imageUrl, existing = null) {
+        const button = existing || document.createElement('button');
+        button.className = imageUrl ? 'scene-card' : 'scene-card scene-placeholder';
         button.type = 'button';
         button.dataset.seek = String(time);
         button.title = `${formatTime(time)}へ移動`;
         const image = document.createElement('img');
-        image.src = imageUrl;
+        if (imageUrl) image.src = imageUrl;
         image.alt = `${formatTime(time)}のシーン`;
         const label = document.createElement('span');
         label.className = 'scene-time';
         label.textContent = formatTime(time);
-        button.append(image, label);
-        elements.sceneStrip.append(button);
+        button.replaceChildren(...(imageUrl ? [image, label] : [label]));
+        if (!existing) elements.sceneStrip.append(button);
+        return button;
       }
 
       async function generateScenes(item) {
@@ -2060,7 +2064,8 @@
           elements.scenesStatus.textContent = `${cachedScenes.length}シーン`;
           return;
         }
-        const placeholderCount = 7;
+        const knownDuration = durationCache.get(cacheKey);
+        const placeholderCount = Number.isFinite(knownDuration) ? (knownDuration < 90 ? 5 : knownDuration < 900 ? 7 : 9) : 9;
         elements.scenes.hidden = false;
         elements.scenesStatus.textContent = '抽出中…';
         elements.sceneStrip.innerHTML = '<span class="scene-placeholder"></span>'.repeat(placeholderCount);
@@ -2080,9 +2085,11 @@
           const count = duration < 90 ? 5 : duration < 900 ? 7 : 9;
           const times = Array.from({ length: count }, (_, index) => duration * ((index + 1) / (count + 1)));
           const generatedScenes = [];
-          elements.sceneStrip.innerHTML = '';
+          // Allocate the complete grid once; extraction only fills existing cells.
+          elements.sceneStrip.replaceChildren();
+          const slots = times.map(time => appendSceneCard(time, null));
 
-          for (const time of times) {
+          for (const [index, time] of times.entries()) {
             if (generationId !== sceneGenerationId) return;
             await seekForScene(extractor, time);
             if (generationId !== sceneGenerationId) return;
@@ -2098,7 +2105,7 @@
 
             const imageUrl = canvas.toDataURL('image/jpeg', .76);
             generatedScenes.push({ time, imageUrl });
-            appendSceneCard(time, imageUrl);
+            appendSceneCard(time, imageUrl, slots[index]);
           }
           if (generationId === sceneGenerationId) {
             sceneCache.set(cacheKey, generatedScenes);
@@ -2107,8 +2114,12 @@
           }
         } catch (_) {
           if (generationId === sceneGenerationId) {
-            elements.sceneStrip.innerHTML = '';
-            elements.scenesStatus.textContent = 'シーンを抽出できませんでした';
+            elements.sceneStrip.querySelectorAll('.scene-placeholder').forEach(slot => {
+              slot.classList.remove('scene-placeholder');
+              slot.classList.add('scene-unavailable');
+              slot.append(document.createTextNode('画像なし'));
+            });
+            elements.scenesStatus.textContent = '一部またはすべてのシーンを抽出できませんでした';
           }
         } finally {
           extractor.pause();
@@ -2930,6 +2941,7 @@
   </script>
 </body>
 </html>
+
 
 
 
