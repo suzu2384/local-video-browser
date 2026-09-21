@@ -769,7 +769,7 @@
     </details>
     <div class="header-actions" role="group" aria-label="動画の検索と表示操作">
     <div class="toolbar" id="toolbar" hidden>
-      <input class="control" id="searchInput" type="search" placeholder="動画名を検索" aria-label="動画名を検索">
+      <input class="control" id="searchInput" type="search" placeholder="動画名・タグを検索" aria-label="動画名・タグを検索">
       <select class="control" id="folderFilter" aria-label="対象フォルダ"><option value="">すべてのフォルダ</option></select>
       <div class="sort-controls">
       <select class="control" id="sortSelect" aria-label="並び順">
@@ -2444,10 +2444,11 @@
       function matchesVideoFilters(video) {
         const term = elements.search.value.trim().toLocaleLowerCase('ja');
         const sourceId = $('#folderFilter').value;
-        if (term && !video.name.toLocaleLowerCase('ja').includes(term)) return false;
         if (sourceId && video.sourceId !== sourceId) return false;
-        if (!selectedTagFilters.size) return true;
         const tags = activeVideoTags(video);
+        if (term && !video.name.toLocaleLowerCase('ja').includes(term) &&
+            !tags.some(tag => tag.toLocaleLowerCase('ja').includes(term))) return false;
+        if (!selectedTagFilters.size) return true;
         // Reuse the UI groups: standalone tags are individual groups too.
         return groupedTags().every(group => {
           const selected = group.items.filter(item => selectedTagFilters.has(item.name));
@@ -2941,6 +2942,7 @@
   </script>
 </body>
 </html>
+
 
 
 
