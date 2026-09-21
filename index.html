@@ -127,7 +127,7 @@
       cursor: pointer;
     }
     .topbar { display: block; padding: 0; }
-    .topbar-row { display: flex; align-items: center; gap: 8px; height: 72px; padding: 10px clamp(12px, 2vw, 28px); }
+    .topbar-row { overflow-x: auto; display: flex; align-items: center; gap: 8px; height: 72px; padding: 10px clamp(12px, 2vw, 28px); }
     .topbar .source-menu { flex: 0 0 440px; min-width: 440px; }
     .folder-summary { overflow: hidden; }
     .topbar .toolbar { flex: 0 1 798px; width: auto; min-width: 738px; }
@@ -674,6 +674,16 @@
     .topbar-row { scrollbar-width: thin; }
     .folder-summary .folder-name { max-width: 100%; }
     .folder-summary .summary { padding-left: 0; border: 0; }
+    .tag-dialog { width: min(420px, calc(100vw - 32px)); max-height: 80vh; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: #101621; color: var(--text); box-shadow: var(--shadow); }
+    .tag-dialog::backdrop { background: rgba(0,0,0,.55); }
+    .tag-dialog-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .tag-dialog h2 { margin: 0; font-size: 18px; }
+    .tag-form { display: flex; gap: 8px; margin-top: 8px; }
+    .tag-form input { flex: 1; min-width: 0; width: 0; }
+    .tag-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .tag-message { font-size: 13px; color: var(--muted); margin: 8px 0; overflow-wrap: anywhere; }
+    #tagButton { flex: 0 0 44px; position: relative; }
+    #tagButton.has-tags::after { content: ''; position: absolute; top: 7px; right: 7px; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
   </style>
 </head>
 <body>
@@ -707,6 +717,9 @@
       </button>
       <div id="thumbnailSize" class="size-buttons" role="group" aria-label="サムネイルサイズ"><button class="button size-button" type="button" data-thumbnail-size="small" aria-label="サムネイル：小" aria-pressed="false" title="サムネイル：小"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.0" y="5" width="4.666666666666667" height="14" rx="1"/><rect x="8.666666666666668" y="5" width="4.666666666666667" height="14" rx="1"/><rect x="15.333333333333334" y="5" width="4.666666666666667" height="14" rx="1"/></svg></button><button class="button size-button" type="button" data-thumbnail-size="medium" aria-label="サムネイル：中" aria-pressed="false" title="サムネイル：中"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.0" y="5" width="8.0" height="14" rx="1"/><rect x="12.0" y="5" width="8.0" height="14" rx="1"/></svg></button><button class="button size-button" type="button" data-thumbnail-size="large" aria-label="サムネイル：大" aria-pressed="false" title="サムネイル：大"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.0" y="5" width="18.0" height="14" rx="1"/></svg></button></div>
     </div>
+    <button class="button icon-button" id="tagButton" type="button" title="タグの管理" aria-label="タグの管理" aria-haspopup="dialog" aria-controls="tagDialog">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M3 3h8l10 10-8 8L3 11Z"/><circle cx="7.5" cy="7.5" r="1"/></svg>
+    </button>
     <button class="button icon-button" id="rescanButton" type="button" title="再スキャン" disabled>↻</button>
     <button class="button primary" id="folderButton" type="button" aria-label="フォルダを追加" title="フォルダを追加">
       <span class="folder-button-icon" aria-hidden="true"><span class="folder-button-plus">＋</span></span>
@@ -720,6 +733,16 @@
     </button>
   </header>
 
+  <dialog id="tagDialog" class="tag-dialog" aria-labelledby="tagDialogTitle">
+    <div class="tag-dialog-heading"><h2 id="tagDialogTitle">タグの管理</h2><button class="button icon-button" id="closeTagDialog" type="button" aria-label="タグの管理を閉じる">✕</button></div>
+    <form id="tagForm">
+      <label for="tagName">タグ名</label>
+      <div class="tag-form"><input class="control" id="tagName" maxlength="40" required autocomplete="off" placeholder="例：お気に入り" aria-describedby="tagMessage"><button class="button" type="submit">追加</button></div>
+    </form>
+    <p class="tag-message" id="tagMessage" role="status"></p>
+    <div class="tag-list" id="tagList"></div>
+    <p class="tag-message">タグの種類はURLに保存されます。変更後のURLをブックマークしてください。</p>
+  </dialog>
   <main>
     <div class="notice" id="notice"></div>
     <div class="content-layout" id="contentLayout">
@@ -789,6 +812,31 @@
       return { normalize, encode, decode, resolve };
     })();
   </script>
+  <script id="tag-url-codec">
+    const TagUrlCodec = (() => {
+      function normalize(tags) {
+        if (!Array.isArray(tags) || tags.length > 100) throw new Error('タグは100個まで登録できます。');
+        return [...new Set(tags.map(tag => {
+          if (typeof tag !== 'string') throw new Error('タグ名が不正です。');
+          const name = tag.trim().normalize('NFC');
+          if (!name || name.length > 40 || /[\x00-\x1f\x7f]/.test(name)) throw new Error('タグ名は空白以外の1〜40文字で入力してください。');
+          return name;
+        }))].sort();
+      }
+      function encode(tags) {
+        const bytes = new TextEncoder().encode(JSON.stringify({ v: 1, tags: normalize(tags) }));
+        return btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join('')).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      }
+      function decode(token) {
+        if (typeof token !== 'string' || token.length > 32768 || !/^[A-Za-z0-9_-]+$/.test(token) || token.length % 4 === 1) throw new Error('タグ情報が不正です。');
+        const binary = atob(token.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - token.length % 4) % 4));
+        const value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(binary, char => char.charCodeAt(0))));
+        if (!value || value.v !== 1 || Object.keys(value).some(key => !['v', 'tags'].includes(key))) throw new Error('タグ情報が未対応の形式です。');
+        return normalize(value.tags);
+      }
+      return { normalize, encode, decode };
+    })();
+  </script>
   <script>
     (() => {
       'use strict';
@@ -825,6 +873,8 @@
 
       let directorySources = [];
       let folderView = null;
+      let tagTypes = [];
+      let folderStateInitialized = false;
       let viewRoot = null;
       let viewEpoch = 0;
       let scanSequence = 0;
@@ -1021,7 +1071,10 @@
 
       function writeFolderHash(token, replace = false) {
         const url = new URL(location.href);
-        url.hash = `folders=${token}`;
+        const params = new URLSearchParams();
+        if (token !== null) params.set('folders', token);
+        if (tagTypes.length) params.set('tags', TagUrlCodec.encode(tagTypes));
+        url.hash = params.toString();
         appliedHash = url.hash;
         try { history[replace ? 'replaceState' : 'pushState'](null, '', url.href); }
         catch (_) { if (replace) location.replace(url.href); else location.hash = url.hash; }
@@ -1039,8 +1092,10 @@
         resetFolderView();
         const epoch = viewEpoch;
         folderView = { folders, token };
+        folderStateInitialized = true;
         viewRoot = root;
         urlError = false;
+        renderTagTypes();
         viewStorageWarning = '';
         writeFolderHash(token);
         updateSourceDisplay();
@@ -2117,43 +2172,100 @@
       async function restoreFolders() {
         if (appliedHash === location.hash) return;
         appliedHash = location.hash;
+        let folders = null, tags;
+        try {
+          const params = new URLSearchParams(location.hash.slice(1));
+          if (params.getAll('folders').length > 1 || params.getAll('tags').length > 1 || [...params.keys()].some(key => !['folders', 'tags'].includes(key))) throw new Error('URLの形式が不正です。');
+          if (params.has('folders')) folders = FolderUrlCodec.decode(params.get('folders'));
+          tags = params.has('tags') ? TagUrlCodec.decode(params.get('tags')) : [];
+        } catch (_) {
+          resetFolderView();
+          folderView = null;
+          viewRoot = null;
+          tagTypes = [];
+          folderStateInitialized = false;
+          urlError = true;
+          renderTagTypes();
+          updateSourceDisplay();
+          setBusy(false);
+          setHeaderCollapsed(false);
+          showNotice('URLのフォルダ・タグ情報が壊れているか、未対応の形式です。元のURLを確認するか、#以降を削除して開き直してください。');
+          return;
+        }
+        const token = folders === null ? null : FolderUrlCodec.encode(folders);
+        const onlyTagsChanged = folderStateInitialized && !urlError && token === (folderView?.token ?? null);
+        tagTypes = tags;
+        renderTagTypes();
+        writeFolderHash(token, true);
+        if (onlyTagsChanged) return;
         resetFolderView();
         const epoch = viewEpoch;
-        folderView = null;
+        folderView = folders === null ? null : { folders, token };
         viewRoot = null;
         viewStorageWarning = '';
         urlError = false;
-        if (!location.hash) {
-          updateSourceDisplay();
-          setBusy(true);
+        folderStateInitialized = true;
+        renderTagTypes();
+        updateSourceDisplay();
+        setBusy(true);
+        if (folders === null) {
           await restoreLegacyFolders(epoch);
           if (epoch === viewEpoch) { updateSourceDisplay(); setBusy(false); }
           return;
         }
-        try {
-          const params = new URLSearchParams(location.hash.slice(1));
-          if (params.getAll('folders').length !== 1 || [...params.keys()].some(key => key !== 'folders')) throw new Error('URLの形式が不正です。');
-          const folders = FolderUrlCodec.decode(params.get('folders'));
-          folderView = { folders, token: FolderUrlCodec.encode(folders) };
-          writeFolderHash(folderView.token, true);
-        } catch (_) {
-          urlError = true;
-          updateSourceDisplay();
-          setBusy(false);
-          setHeaderCollapsed(false);
-          showNotice('URLのフォルダ情報が壊れているか、未対応の形式です。元のURLを確認するか、#以降を削除して開き直してください。');
-          return;
-        }
-        updateSourceDisplay();
-        setBusy(true);
         let saved;
-        try { saved = await dbGet('settings', `folderView:${folderView.token}`); } catch (_) {}
+        try { saved = await dbGet('settings', `folderView:${token}`); } catch (_) {}
         if (epoch !== viewEpoch) return;
         if (saved?.handle?.kind === 'directory' && typeof saved.handle.queryPermission === 'function') {
           viewRoot = { handle: saved.handle, name: saved.name || saved.handle.name, cacheId: saved.cacheId || crypto.randomUUID() };
         }
         await scanSources(false);
       }
+
+      function renderTagTypes() {
+        $('#tagButton').disabled = urlError;
+        $('#tagForm').querySelectorAll('input, button').forEach(node => { node.disabled = urlError; });
+        $('#tagButton').classList.toggle('has-tags', tagTypes.length > 0);
+        $('#tagButton').title = `タグの管理（${tagTypes.length}個）`;
+        $('#tagList').innerHTML = tagTypes.length ? tagTypes.map((name, index) => `
+          <span class="source-chip"><span>${escapeHtml(name)}</span><button class="remove-source" type="button" data-remove-tag="${index}" aria-label="${escapeHtml(name)}を削除">✕</button></span>`).join('') : '<p class="tag-message">タグはまだ登録されていません。</p>';
+        $('#tagMessage').textContent = '';
+      }
+
+      function changeTagTypes(tags) {
+        if (urlError) return;
+        tagTypes = TagUrlCodec.normalize(tags);
+        writeFolderHash(folderView?.token ?? null);
+        renderTagTypes();
+      }
+
+      $('#tagButton').addEventListener('click', () => {
+        $('#tagDialog').showModal();
+        $('#tagName').focus();
+      });
+      $('#closeTagDialog').addEventListener('click', () => $('#tagDialog').close());
+      $('#tagForm').addEventListener('submit', event => {
+        event.preventDefault();
+        if (urlError) return;
+        try {
+          const name = TagUrlCodec.normalize([$('#tagName').value])[0];
+          if (tagTypes.includes(name)) throw new Error('同じ名前のタグは登録済みです。');
+          changeTagTypes([...tagTypes, name]);
+          $('#tagName').value = '';
+          $('#tagMessage').textContent = `「${name}」を追加しました。`;
+          $('#tagName').focus();
+        } catch (error) { $('#tagMessage').textContent = error.message; }
+      });
+      $('#tagList').addEventListener('click', event => {
+        const button = event.target.closest('[data-remove-tag]');
+        if (!button || urlError) return;
+        const index = Number(button.dataset.removeTag);
+        const name = tagTypes[index];
+        changeTagTypes(tagTypes.filter((_, i) => i !== index));
+        $('#tagMessage').textContent = `「${name}」を削除しました。`;
+        const remaining = $('#tagList').querySelectorAll('[data-remove-tag]');
+        (remaining[Math.min(index, remaining.length - 1)] || $('#tagName')).focus();
+      });
 
       let miniSceneCount = 3;
       function miniSceneRatios(count) {
@@ -2348,3 +2460,4 @@
   </script>
 </body>
 </html>
+
