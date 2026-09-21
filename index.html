@@ -1,0 +1,2032 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>LocalFlix</title>
+  <style>
+    :root {
+      --bg: #080b12;
+      --panel: #101621;
+      --panel-2: #171e2b;
+      --line: rgba(255,255,255,.1);
+      --text: #f7f8fb;
+      --muted: #9ba6b7;
+      --accent: #e50914;
+      --accent-2: #ff3943;
+      --shadow: 0 18px 55px rgba(0,0,0,.45);
+      --scene-width: 150px;
+    }
+    * { box-sizing: border-box; }
+    html { min-height: 100%; background: var(--bg); }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 15% -10%, rgba(229,9,20,.18), transparent 31rem),
+        radial-gradient(circle at 90% 10%, rgba(72,91,154,.13), transparent 30rem),
+        var(--bg);
+      font-family: Inter, "Segoe UI", "Yu Gothic UI", Meiryo, sans-serif;
+    }
+    button, input, select { font: inherit; }
+    button { color: inherit; }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-height: 72px;
+      padding: 13px clamp(18px, 4vw, 56px);
+      border-bottom: 1px solid var(--line);
+      background: rgba(8,11,18,.82);
+      backdrop-filter: blur(18px);
+    }
+    .brand {
+      flex: 0 0 auto;
+      margin-right: 4px;
+      color: var(--accent-2);
+      font-size: 25px;
+      font-weight: 900;
+      letter-spacing: -.8px;
+    }
+    .source-menu {
+      position: relative;
+      flex: 1 1 160px;
+      min-width: 0;
+    }
+    .folder-summary {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      cursor: pointer;
+      list-style: none;
+    }
+    .folder-summary::-webkit-details-marker { display: none; }
+    .folder-name {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--muted);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .source-menu[open] .folder-name { color: var(--text); }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 42px;
+      padding: 0 16px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel-2);
+      cursor: pointer;
+      transition: transform .15s ease, border-color .15s ease, background .15s ease;
+    }
+    .button:hover { transform: translateY(-1px); border-color: rgba(255,255,255,.24); }
+    .button:disabled { cursor: not-allowed; opacity: .42; transform: none; }
+    .button.primary { border-color: transparent; background: var(--accent); font-weight: 700; }
+    .button.primary:hover { background: var(--accent-2); }
+    .icon-button { width: 42px; padding: 0; font-size: 19px; }
+    main { padding: 22px clamp(18px, 4vw, 56px) 64px; }
+    .toolbar {
+      display: grid;
+      flex: 1 1 720px;
+      min-width: 0;
+      grid-template-columns: minmax(220px, 280px) 175px 145px 44px 114px;
+      gap: 10px;
+      width: 100%;
+    }
+    .toolbar[hidden] { display: none; }
+    .sort-direction { padding: 0; width: 44px; height: 44px; color: #dce3ef; }
+    .sort-direction svg { width: 22px; height: 22px; }
+    .sort-direction .direction-arrow { transform-origin: 6px 12px; transition: transform .18s ease; }
+    .sort-direction.descending .direction-arrow { transform: rotate(180deg); }
+    .sort-direction:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 3px; }
+    .control {
+      width: 100%;
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      outline: none;
+      color: var(--text);
+      background: rgba(16,22,33,.9);
+    }
+    input.control { padding: 0 15px; }
+    select.control {
+      min-width: 0;
+      padding: 0 32px 0 13px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .topbar { display: block; padding: 0; }
+    .topbar-row { display: flex; align-items: center; gap: 8px; height: 72px; padding: 10px clamp(12px, 2vw, 28px); }
+    .topbar .source-menu { flex: 0 0 440px; min-width: 440px; }
+    .folder-summary { overflow: hidden; }
+    .topbar .toolbar { flex: 0 1 798px; width: auto; min-width: 738px; }
+    .control { min-width: 0; }
+    .topbar .button { white-space: nowrap; }
+    @media (max-width: 1600px) {
+      .topbar .brand { font-size: 20px; }
+      .topbar .button-label { display: none; }
+      
+    }
+    @media (max-width: 1600px) {
+      .topbar-row { overflow-x: auto; }
+      
+    }
+    .header-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: 0 0 auto; }
+    .header-actions > .button { flex-shrink: 0; }
+    .topbar .header-actions .toolbar { flex: 0 0 auto; width: clamp(738px, 48vw, 798px); }
+    .header-toggle {
+      position: absolute; top: 100%; right: 16px;
+      width: 36px; min-height: 20px; height: 20px;
+      padding: 0; border-radius: 0 0 8px 8px;
+      background: rgba(16,22,33,.85);
+    }
+    .header-toggle:hover { transform: none; }
+    .header-toggle svg { width: 16px; height: 16px; transition: transform .15s; }
+    .topbar.collapsed {
+      height: 0; min-height: 0; padding: 0; border: 0;
+      background: transparent; backdrop-filter: none; overflow: visible;
+    }
+    .topbar.collapsed > :not(.header-toggle) { display: none; }
+    .topbar.collapsed .header-toggle svg { transform: rotate(180deg); }
+    .control:focus { border-color: rgba(229,9,20,.75); box-shadow: 0 0 0 3px rgba(229,9,20,.13); }
+    .summary {
+      flex: 0 0 auto;
+      padding-left: 10px;
+      border-left: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .summary:empty { display: none; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+      gap: 22px 16px;
+      min-width: 0;
+    }
+    .content-layout.player-open {
+      display: grid;
+      grid-template-columns: minmax(0, var(--player-width, 57%)) 24px minmax(0, 1fr);
+      align-items: start;
+      gap: 0;
+    }
+    .split-handle { display: none; }
+    @media (min-width: 1001px) {
+      .content-layout.player-open:not(.theater-mode) .split-handle {
+        display: flex;
+        position: sticky;
+        top: calc(var(--header-height, 72px) + var(--content-top-gap, 22px));
+        height: calc(100dvh - var(--header-height, 72px) - var(--content-top-gap, 22px) - 18px);
+        min-height: 80px;
+        align-items: center;
+        justify-content: center;
+        cursor: col-resize;
+        touch-action: none;
+        border-radius: 8px;
+        outline-offset: -3px;
+      }
+      .split-handle::before {
+        content: '';
+        width: 4px;
+        height: 64px;
+        border-radius: 4px;
+        background: #3d4656;
+        transition: background .15s;
+      }
+      .split-handle:hover::before, .split-handle:focus-visible::before,
+      .split-handle.dragging::before { background: var(--accent-2); }
+    }
+    body.resizing-split, body.resizing-split * { cursor: col-resize !important; user-select: none !important; }
+    .content-layout.player-open .grid {
+      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    }
+    .content-layout.player-open.theater-mode {
+      display: block;
+      position: static;
+      grid-template-columns: 1fr;
+      height: auto;
+      padding: 0;
+      overflow: visible;
+      background: transparent;
+    }
+    .content-layout.player-open.theater-mode .grid {
+      grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+      grid-template-rows: none;
+      grid-auto-flow: row;
+      gap: 22px 16px;
+      overflow: visible;
+      padding: 0;
+    }
+    .card {
+      min-width: 0;
+      padding: 0;
+      border: 0;
+      text-align: left;
+      background: transparent;
+      cursor: pointer;
+    }
+    .poster {
+      position: relative;
+      overflow: hidden;
+      aspect-ratio: 16 / 9;
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 12px;
+      background: linear-gradient(135deg, #202a3b, #111722);
+      box-shadow: 0 8px 26px rgba(0,0,0,.2);
+      transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+    }
+    .card:hover .poster, .card:focus-visible .poster {
+      z-index: 1;
+      transform: scale(1.035);
+      border-color: rgba(255,255,255,.25);
+      box-shadow: var(--shadow);
+    }
+    .card.selected .poster { border-color: var(--accent-2); box-shadow: 0 0 0 2px rgba(229,9,20,.3); }
+    .thumb { width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .25s ease; }
+    .thumb { position: absolute; inset: 0; z-index: 1; }
+    .thumb.ready { opacity: 1; }
+    .preview-video {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0;
+      background: #000;
+      transition: opacity .18s ease;
+      pointer-events: none;
+    }
+    .preview-video.active { opacity: 1; }
+    .duration-badge {
+      position: absolute;
+      right: 8px;
+      bottom: 8px;
+      z-index: 3;
+      padding: 3px 6px;
+      border-radius: 5px;
+      color: #fff;
+      background: rgba(0,0,0,.78);
+      font-size: 12px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.2;
+      pointer-events: none;
+    }
+    .duration-badge:empty { display: none; }
+    .card-scenes {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 4px;
+      width: 100%;
+      min-width: 0;
+      margin: 7px 1px 0;
+    }
+    .card-scene {
+      position: relative;
+      display: block;
+      overflow: hidden;
+      width: 100%;
+      min-width: 0;
+      height: auto;
+      aspect-ratio: 16 / 9;
+      border: 1px solid rgba(255,255,255,.07);
+      border-radius: 5px;
+      object-fit: cover;
+      background: #151b25;
+    }
+    .card-scene > img {
+      position: absolute;
+      inset: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .card-scene.unavailable {
+      display: grid;
+      place-items: center;
+      color: #7e8a9d;
+      background: #151b25;
+    }
+    .card-scene.unavailable::before { content: '▧'; font-size: 18px; }
+    .card-scene.loading {
+      background: linear-gradient(100deg, #151b25 20%, #252d3a 38%, #151b25 58%);
+      background-size: 220% 100%;
+      animation: shimmer 1.2s linear infinite;
+    }
+    .fallback-art {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at 75% 20%, hsla(var(--h),80%,70%,.35), transparent 37%),
+        linear-gradient(145deg, hsl(var(--h),45%,25%), #111722 70%);
+    }
+    .fallback-art::before { content: "▶"; font-size: 34px; opacity: .77; filter: drop-shadow(0 3px 10px #000); }
+    .play-badge {
+      position: absolute;
+      z-index: 3;
+      left: 12px;
+      bottom: 12px;
+      display: grid;
+      width: 38px;
+      height: 38px;
+      place-items: center;
+      border-radius: 50%;
+      color: #111;
+      background: rgba(255,255,255,.94);
+      opacity: 0;
+      transform: translateY(4px);
+      transition: .2s ease;
+    }
+    .card:hover .play-badge, .card:focus-visible .play-badge { opacity: 1; transform: none; }
+    .card-title {
+      overflow: hidden;
+      margin: 11px 2px 4px;
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.35;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .card-meta {
+      overflow: hidden;
+      margin: 0 2px;
+      color: var(--muted);
+      font-size: 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .notice {
+      position: fixed;
+      right: clamp(18px, 4vw, 56px);
+      bottom: 22px;
+      z-index: 30;
+      display: none;
+      width: min(560px, calc(100vw - 36px));
+      margin: 0;
+      padding: 13px 15px;
+      border: 1px solid rgba(255,192,84,.25);
+      border-radius: 11px;
+      color: #f8d89a;
+      background: rgba(156,103,16,.13);
+      line-height: 1.55;
+    }
+    .notice.show { display: block; }
+    .sources {
+      position: absolute;
+      top: calc(100% + 18px);
+      left: 0;
+      z-index: 20;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      width: min(520px, calc(100vw - 36px));
+      max-height: 260px;
+      margin: 0;
+      padding: 12px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(16,22,33,.98);
+      box-shadow: var(--shadow);
+    }
+    .sources:empty { display: none; }
+    .source-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 34px;
+      padding: 0 6px 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: #dbe1eb;
+      background: rgba(23,30,43,.9);
+      font-size: 13px;
+    }
+    .source-chip.pending { border-color: rgba(255,192,84,.4); color: #f8d89a; }
+    .remove-source {
+      display: grid;
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      place-items: center;
+      border: 0;
+      border-radius: 50%;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+    }
+    .remove-source:hover { color: #fff; background: rgba(255,255,255,.1); }
+    .player-pane {
+      position: sticky;
+      top: calc(var(--header-height, 72px) + var(--content-top-gap, 22px));
+      scroll-margin-top: calc(var(--header-height, 72px) + var(--content-top-gap, 22px));
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      color: var(--text);
+      background: #06080d;
+      box-shadow: var(--shadow);
+    }
+    .content-layout.player-open:not(.theater-mode) .player-pane {
+      max-height: calc(100vh - var(--header-height, 72px) - var(--content-top-gap, 22px) - 18px);
+      max-height: calc(100dvh - var(--header-height, 72px) - var(--content-top-gap, 22px) - 18px);
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scrollbar-color: #3d4656 transparent;
+    }
+    .player-shell { position: relative; }
+    .video-stage { position: relative; }
+    .video-stage .mode-toggle, .video-stage .close, .video-stage .loop-toggle {
+      transition: opacity .2s ease;
+    }
+    .video-stage.controls-hidden .mode-toggle,
+    .video-stage.controls-hidden .close,
+    .video-stage.controls-hidden .loop-toggle {
+      opacity: 0;
+      pointer-events: none;
+    }
+    .video-stage.controls-hidden button:focus-visible { opacity: 1; pointer-events: auto; }
+    .loop-toggle {
+      display: grid;
+      place-items: center;
+      position: absolute;
+      z-index: 3;
+      top: 12px;
+      right: 62px;
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      border: 1px solid rgba(255,255,255,.25);
+      border-radius: 50%;
+      color: #fff;
+      background: rgba(0,0,0,.72);
+      cursor: pointer;
+    }
+    .loop-toggle svg { display: block; width: 21px; height: 21px; }
+    .loop-toggle[aria-pressed="true"] { background: #e5e7eb; color: #151b25; border-color: #fff; }
+    .player-video {
+      display: block;
+      width: 100%;
+      max-height: calc(100vh - 220px);
+      aspect-ratio: 16 / 9;
+      object-fit: contain;
+      background: #000;
+    }
+    .theater-mode .player-pane {
+      position: relative;
+      top: auto;
+      width: 100%;
+      height: auto;
+      min-height: 0;
+      margin-bottom: 28px;
+    }
+    .theater-mode .player-shell {
+      display: block;
+      height: auto;
+    }
+    .theater-mode .player-video {
+      height: calc(100vh - var(--header-height, 72px) - var(--content-top-gap, 22px));
+      height: calc(100dvh - var(--header-height, 72px) - var(--content-top-gap, 22px));
+      min-height: 360px;
+      max-height: none;
+    }
+    .theater-mode .player-info {
+      padding: 17px 20px 20px;
+    }
+    .theater-mode .player-info h2 {
+      margin-bottom: 6px;
+      font-size: 19px;
+    }
+    .theater-mode .scenes {
+      padding: 0 16px 16px;
+    }
+    .theater-mode .scenes-head {
+      min-height: 43px;
+    }
+    .mode-toggle {
+      position: absolute;
+      z-index: 3;
+      top: 12px;
+      left: 12px;
+      min-height: 38px;
+      padding: 0 13px;
+      border: 1px solid rgba(255,255,255,.25);
+      border-radius: 999px;
+      color: #fff;
+      background: rgba(0,0,0,.72);
+      cursor: pointer;
+      backdrop-filter: blur(8px);
+    }
+    .mode-toggle:hover { background: rgba(30,30,30,.92); }
+    .close {
+      position: absolute;
+      z-index: 2;
+      top: 12px;
+      right: 12px;
+      width: 40px;
+      height: 40px;
+      border: 1px solid rgba(255,255,255,.25);
+      border-radius: 50%;
+      color: #fff;
+      background: rgba(0,0,0,.72);
+      cursor: pointer;
+    }
+    .player-info { padding: 17px 20px 20px; }
+    .player-info h2 { margin: 0 0 6px; font-size: 19px; }
+    .player-info p { margin: 0; color: var(--muted); font-size: 13px; }
+    .player-error { display: none; padding: 16px 20px; color: #ffb0b4; background: rgba(229,9,20,.1); }
+    .player-error.show { display: block; }
+    .scenes {
+      padding: 0 16px 16px;
+      border-top: 1px solid var(--line);
+    }
+    .scenes-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 43px;
+    }
+    .scenes-title { font-size: 13px; font-weight: 750; }
+    .scenes-status { color: var(--muted); font-size: 11px; }
+    .scene-strip {
+      display: flex;
+      gap: 9px;
+      overflow-x: auto;
+      padding: 1px 1px 7px;
+      scrollbar-color: #3d4656 transparent;
+    }
+    .content-layout.player-open:not(.theater-mode) .scene-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, var(--scene-width));
+      overflow: visible;
+    }
+    .content-layout.player-open:not(.theater-mode) .scene-card,
+    .content-layout.player-open:not(.theater-mode) .scene-placeholder {
+      width: var(--scene-width);
+      min-width: var(--scene-width);
+      flex: none;
+    }
+    .scene-card {
+      position: relative;
+      flex: 0 0 var(--scene-width);
+      width: var(--scene-width);
+      overflow: hidden;
+      aspect-ratio: 16 / 9;
+      padding: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #151b25;
+      cursor: pointer;
+    }
+    .scene-card:hover { border-color: var(--accent-2); transform: translateY(-1px); }
+    .scene-card img { display: block; width: 100%; height: 100%; object-fit: cover; }
+    .scene-time {
+      position: absolute;
+      right: 5px;
+      bottom: 5px;
+      padding: 2px 5px;
+      border-radius: 4px;
+      color: #fff;
+      background: rgba(0,0,0,.78);
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+    }
+    .scene-placeholder {
+      flex: 0 0 var(--scene-width);
+      width: var(--scene-width);
+      aspect-ratio: 16 / 9;
+      border-radius: 8px;
+      background: linear-gradient(100deg, #151b25 20%, #252d3a 38%, #151b25 58%);
+      background-size: 220% 100%;
+      animation: shimmer 1.2s linear infinite;
+    }
+    .button.loading::after {
+      content: "";
+      width: 17px;
+      height: 17px;
+      margin-left: 10px;
+      border: 2px solid rgba(255,255,255,.25);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes shimmer { to { background-position-x: -220%; } }
+    @media (max-width: 1000px) {
+      .content-layout.player-open { grid-template-columns: 1fr; gap: 24px; }
+      .player-pane { position: relative; top: auto; }
+      .player-video { max-height: 62vh; }
+      .content-layout.player-open .grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+    }
+    @media (max-width: 760px) {
+      .topbar { gap: 10px; }
+      .grid { grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 18px 12px; }
+      .button-label { display: none; }
+    }
+    .grid, .content-layout.player-open .grid, .content-layout.theater-mode .grid {
+      grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--thumbnail-width, 224px)), 1fr));
+    }
+    .card-scenes { grid-template-columns: repeat(var(--mini-scene-count, 3), minmax(0, 1fr)); margin-left: 0; margin-right: 0; }
+    .size-buttons { display: flex; gap: 3px; }
+    .size-button { width: 36px; padding: 0; min-height: 44px; }
+    .size-button svg { width: 24px; height: 24px; }
+    .size-button[aria-pressed="true"] { color: #151b25; background: #e5e7eb; }
+    #durationStatus { flex-shrink: 0; }
+    .folder-summary { display: grid; grid-template-columns: 140px 130px minmax(0, 1fr); align-items: center; gap: 8px; line-height: 18px; }
+    .folder-summary .summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+    .folder-summary .summary:empty { display: block; }
+    .folder-summary #summary.summary-message { grid-column: 2 / -1; overflow: visible; text-overflow: clip; }
+    .folder-summary #summary.summary-message ~ #durationStatus { display: none; }
+    .topbar-row { scrollbar-width: thin; }
+    .folder-summary .folder-name { max-width: 100%; }
+    .folder-summary .summary { padding-left: 0; border: 0; }
+  </style>
+</head>
+<body>
+  <header class="topbar" id="topbar">
+    <div class="topbar-row" id="headerContents">
+    <div class="brand">LocalFlix</div>
+    <details class="source-menu" id="sourceMenu">
+      <summary class="folder-summary" title="対象フォルダを表示">
+        <span class="folder-name" id="folderName">動画フォルダ未選択</span>
+        <span class="summary" id="summary"></span>
+        <span class="summary" id="durationStatus" role="status"></span>
+        
+      </summary>
+      <div class="sources" id="sources"></div>
+    </details>
+    <div class="header-actions" role="group" aria-label="動画の検索と表示操作">
+    <div class="toolbar" id="toolbar" hidden>
+      <input class="control" id="searchInput" type="search" placeholder="動画名を検索" aria-label="動画名を検索">
+      <select class="control" id="folderFilter" aria-label="対象フォルダ"><option value="">すべてのフォルダ</option></select>
+      <select class="control" id="sortSelect" aria-label="並び順">
+        <option value="recommended" selected>おすすめ順</option>
+        <option value="name">名前</option>
+        <option value="modified">更新日時</option>
+        <option value="duration">再生時間</option>
+      </select>
+      <button class="button sort-direction" id="sortDirection" type="button" aria-label="並び順：昇順。降順に切り替え" title="昇順（クリックで降順）">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path class="direction-arrow" d="M6 19V5M2.5 8.5 6 5l3.5 3.5"/>
+          <path d="M13 6h3M13 12h5M13 18h8"/>
+        </svg>
+      </button>
+      <div id="thumbnailSize" class="size-buttons" role="group" aria-label="サムネイルサイズ"><button class="button size-button" type="button" data-thumbnail-size="small" aria-label="サムネイル：小" aria-pressed="false" title="サムネイル：小"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.0" y="5" width="4.666666666666667" height="14" rx="1"/><rect x="8.666666666666668" y="5" width="4.666666666666667" height="14" rx="1"/><rect x="15.333333333333334" y="5" width="4.666666666666667" height="14" rx="1"/></svg></button><button class="button size-button" type="button" data-thumbnail-size="medium" aria-label="サムネイル：中" aria-pressed="false" title="サムネイル：中"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.0" y="5" width="8.0" height="14" rx="1"/><rect x="12.0" y="5" width="8.0" height="14" rx="1"/></svg></button><button class="button size-button" type="button" data-thumbnail-size="large" aria-label="サムネイル：大" aria-pressed="false" title="サムネイル：大"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.0" y="5" width="18.0" height="14" rx="1"/></svg></button></div>
+    </div>
+    <button class="button icon-button" id="rescanButton" type="button" title="再スキャン" disabled>↻</button>
+    <button class="button primary" id="folderButton" type="button">＋ <span class="button-label">フォルダを追加</span></button>
+    </div>
+    <input id="folderFallback" type="file" webkitdirectory multiple hidden>
+    </div>
+    <button class="button icon-button header-toggle" id="headerToggle" type="button" title="ヘッダーを折りたたむ" aria-label="ヘッダーを折りたたむ" aria-expanded="true" aria-controls="headerContents">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 15 6-6 6 6"/></svg>
+    </button>
+  </header>
+
+  <main>
+    <div class="notice" id="notice"></div>
+    <div class="content-layout" id="contentLayout">
+      <aside class="player-pane" id="playerPane" hidden>
+        <div class="player-shell">
+          <div class="video-stage" id="videoStage">
+          <button class="mode-toggle" id="modeToggle" type="button">▣ シアターモード</button>
+          <button class="loop-toggle" id="loopToggle" type="button" aria-label="ループ再生をオンにする" aria-pressed="false" title="ループ再生：オフ">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10V8a3 3 0 0 1 3-3h13m-3-3 3 3-3 3M20 14v2a3 3 0 0 1-3 3H4m3 3-3-3 3-3"/></svg>
+          </button>
+          <button class="close" id="closePlayer" type="button" aria-label="再生画面を閉じる">✕</button>
+          <video class="player-video" id="player" controls playsinline></video>
+          </div>
+          <div class="player-error" id="playerError">この動画はブラウザで再生できない形式、またはコーデックです。</div>
+          <div class="player-info">
+            <h2 id="playerTitle"></h2>
+            <p id="playerPath"></p>
+          </div>
+          <section class="scenes" id="scenes" hidden>
+            <div class="scenes-head">
+              <span class="scenes-title">シーンジャンプ</span>
+              <span class="scenes-status" id="scenesStatus"></span>
+            </div>
+            <div class="scene-strip" id="sceneStrip"></div>
+          </section>
+        </div>
+      </aside>
+      <div class="split-handle" id="splitHandle" role="separator" aria-orientation="vertical" aria-label="再生領域の幅" aria-controls="playerPane" tabindex="0" title="ドラッグで幅を調整・ダブルクリックで元に戻す"></div>
+      <section class="grid" id="grid" aria-live="polite"></section>
+    </div>
+
+  </main>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const VIDEO_EXTENSIONS = new Set([
+        'mp4', 'm4v', 'webm', 'ogv', 'ogg', 'mov', 'mkv', 'avi', 'wmv',
+        'mpg', 'mpeg', 'm2ts', 'mts', 'ts', '3gp', 'flv'
+      ]);
+      const $ = (selector) => document.querySelector(selector);
+      const elements = {
+        folderButton: $('#folderButton'),
+        fallback: $('#folderFallback'),
+        rescanButton: $('#rescanButton'),
+        folderName: $('#folderName'),
+        toolbar: $('#toolbar'),
+        search: $('#searchInput'),
+        sort: $('#sortSelect'),
+        notice: $('#notice'),
+        sources: $('#sources'),
+        summary: $('#summary'),
+        contentLayout: $('#contentLayout'),
+        grid: $('#grid'),
+        playerPane: $('#playerPane'),
+        player: $('#player'),
+        modeToggle: $('#modeToggle'),
+        closePlayer: $('#closePlayer'),
+        playerTitle: $('#playerTitle'),
+        playerPath: $('#playerPath'),
+        playerError: $('#playerError'),
+        scenes: $('#scenes'),
+        scenesStatus: $('#scenesStatus'),
+        sceneStrip: $('#sceneStrip')
+      };
+
+      let directorySources = [];
+      let allVideos = [];
+      let displayedVideos = [];
+      let playerUrl = null;
+      let currentVideoKey = null;
+      let playerMode = 'split';
+      let sceneGenerationId = 0;
+      let previewTimer = null;
+      let previewCard = null;
+      let previewUrl = null;
+      let observer = null;
+      let miniSceneObserver = null;
+      let miniSceneRenderId = 0;
+      let miniSceneActive = 0;
+      let miniSceneQueue = [];
+      const thumbUrls = new Set();
+      const durationCache = new Map();
+      let sortDescending = false;
+      let durationOrderTimer = null;
+      const durationFailures = new Set();
+      let durationSortGeneration = 0;
+      const sceneCache = new Map();
+      const miniSceneCache = new Map();
+
+      function extensionOf(name) {
+        const dot = name.lastIndexOf('.');
+        return dot < 0 ? '' : name.slice(dot + 1).toLowerCase();
+      }
+
+      function isVideo(name) { return VIDEO_EXTENSIONS.has(extensionOf(name)); }
+
+      function formatBytes(bytes) {
+        if (!Number.isFinite(bytes) || bytes < 1) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+        const value = bytes / (1024 ** index);
+        return `${value.toFixed(index > 1 ? 1 : 0)} ${units[index]}`;
+      }
+
+      function formatTime(seconds) {
+        const total = Math.max(0, Math.floor(seconds || 0));
+        const hours = Math.floor(total / 3600);
+        const minutes = Math.floor((total % 3600) / 60);
+        const secs = total % 60;
+        return hours
+          ? `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+          : `${minutes}:${String(secs).padStart(2, '0')}`;
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>'"]/g, (char) => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+        })[char]);
+      }
+
+      function displayTitle(name) { return name.replace(/\.[^.]+$/, ''); }
+
+      function videoKey(video) {
+        return `${video.sourceId}|${video.path}|${video.file.size}|${video.file.lastModified}`;
+      }
+
+      function hueFor(value) {
+        let hash = 0;
+        for (let i = 0; i < value.length; i += 1) hash = ((hash << 5) - hash + value.charCodeAt(i)) | 0;
+        return Math.abs(hash) % 360;
+      }
+
+      function showNotice(message = '') {
+        elements.notice.textContent = message;
+        elements.notice.classList.toggle('show', Boolean(message));
+      }
+
+      function setLibrarySummary(text, isMessage = false) {
+        elements.summary.textContent = text;
+        elements.summary.classList.toggle('summary-message', isMessage);
+      }
+
+      function setBusy(busy, message = '') {
+        elements.folderButton.disabled = busy;
+        elements.rescanButton.disabled = busy || !directorySources.length;
+        elements.folderButton.classList.toggle('loading', busy);
+        if (message) setLibrarySummary(message, true);
+      }
+
+      function openDatabase() {
+        return new Promise((resolve, reject) => {
+          if (!('indexedDB' in window)) return reject(new Error('IndexedDB unavailable'));
+          const request = indexedDB.open('localflix', 2);
+          request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains('settings')) db.createObjectStore('settings');
+            if (!db.objectStoreNames.contains('thumbnails')) db.createObjectStore('thumbnails');
+          };
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      async function dbGet(store, key) {
+        const db = await openDatabase();
+        return new Promise((resolve, reject) => {
+          const request = db.transaction(store).objectStore(store).get(key);
+          request.onsuccess = () => { db.close(); resolve(request.result); };
+          request.onerror = () => { db.close(); reject(request.error); };
+        });
+      }
+
+      async function dbPut(store, key, value) {
+        const db = await openDatabase();
+        return new Promise((resolve, reject) => {
+          const transaction = db.transaction(store, 'readwrite');
+          transaction.objectStore(store).put(value, key);
+          transaction.oncomplete = () => { db.close(); resolve(); };
+          transaction.onerror = () => { db.close(); reject(transaction.error); };
+        });
+      }
+
+      async function chooseFolder() {
+        showNotice();
+        if ('showDirectoryPicker' in window) {
+          try {
+            const handle = await window.showDirectoryPicker({ mode: 'read', startIn: 'videos' });
+            const comparisons = directorySources
+              .filter((source) => source.handle?.isSameEntry)
+              .map((source) => source.handle.isSameEntry(handle).catch(() => false));
+            if ((await Promise.all(comparisons)).some(Boolean)) {
+              showNotice(`「${handle.name}」はすでに追加されています。`);
+              return;
+            }
+            directorySources.push({
+              id: crypto.randomUUID?.() || `source-${Date.now()}`,
+              name: handle.name,
+              kind: 'handle',
+              handle,
+              pending: false
+            });
+            await persistHandles();
+            await scanSources(false);
+            return;
+          } catch (error) {
+            if (error?.name === 'AbortError') return;
+            showNotice('この開き方ではフォルダの記憶機能を利用できません。フォルダを選び直してください。');
+          }
+        }
+        elements.fallback.value = '';
+        elements.fallback.click();
+      }
+
+      async function persistHandles() {
+        const handles = directorySources
+          .filter((source) => source.kind === 'handle')
+          .map((source) => ({ id: source.id, name: source.name, handle: source.handle }));
+        try { await dbPut('settings', 'directoryHandles', handles); } catch (_) {}
+      }
+
+      async function walkDirectory(handle, source, prefix = '') {
+        const videos = [];
+        for await (const entry of handle.values()) {
+          if (entry.kind === 'directory') {
+            videos.push(...await walkDirectory(entry, source, `${prefix}${entry.name}/`));
+          } else if (entry.kind === 'file' && isVideo(entry.name)) {
+            try {
+              const file = await entry.getFile();
+              videos.push({
+                name: entry.name,
+                path: `${source.name}/${prefix}${entry.name}`,
+                relativePath: `${prefix}${entry.name}`,
+                sourceId: source.id,
+                file,
+                handle: entry
+              });
+            } catch (_) {}
+          }
+        }
+        return videos;
+      }
+
+      async function scanSources(requestPermissions = false) {
+        durationSortGeneration += 1;
+        $('#durationStatus').textContent = '';
+        durationFailures.clear();
+        if (!directorySources.length) {
+          allVideos = [];
+          updateSourceDisplay();
+          updateFolderFilter();
+          elements.toolbar.hidden = true;
+          setLibrarySummary('');
+          elements.grid.innerHTML = '';
+          if (currentVideoKey) closePlayer();
+          return;
+        }
+        setBusy(true, '動画を検索しています…');
+        const unavailable = [];
+        try {
+          const scans = directorySources.map(async (source) => {
+            if (source.kind === 'fallback') return source.videos;
+            try {
+              let permission = await source.handle.queryPermission({ mode: 'read' });
+              if (permission !== 'granted' && requestPermissions) {
+                permission = await source.handle.requestPermission({ mode: 'read' });
+              }
+              source.pending = permission !== 'granted';
+              if (source.pending) {
+                setHeaderCollapsed(false);
+                unavailable.push(source.name);
+                return [];
+              }
+              return await walkDirectory(source.handle, source);
+            } catch (_) {
+              source.pending = true;
+              setHeaderCollapsed(false);
+              unavailable.push(source.name);
+              return [];
+            }
+          });
+          allVideos = (await Promise.all(scans)).flat();
+          updateSourceDisplay();
+          finishScan();
+          const hasTemporarySource = directorySources.some((source) => source.kind === 'fallback');
+          showNotice(unavailable.length
+            ? `アクセス許可が必要なフォルダがあります：${unavailable.join('、')}。「↻」を押して再許可してください。`
+            : hasTemporarySource
+              ? 'このブラウザでは追加したフォルダを記憶できないため、次回起動時はもう一度選択してください。'
+              : '');
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      function scanFallbackFiles(fileList) {
+        const files = [...fileList];
+        const firstPath = files[0]?.webkitRelativePath || '';
+        const name = firstPath.split('/')[0] || '選択した動画';
+        const id = `fallback-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const videos = files.filter((file) => isVideo(file.name)).map((file) => ({
+          name: file.name,
+          path: file.webkitRelativePath || file.name,
+          relativePath: (file.webkitRelativePath || file.name).replace(`${name}/`, ''),
+          sourceId: id,
+          file
+        }));
+        directorySources.push({ id, name, kind: 'fallback', videos, pending: false });
+        showNotice('このブラウザでは追加したフォルダを記憶できないため、次回起動時はもう一度選択してください。');
+        scanSources(false);
+      }
+
+      function updateSourceDisplay() {
+        const count = directorySources.length;
+        elements.folderName.textContent = count === 0
+          ? '動画フォルダ未選択'
+          : count === 1 ? directorySources[0].name : `${count}個のフォルダを対象`;
+        elements.sources.innerHTML = directorySources.map((source) => `
+          <span class="source-chip${source.pending ? ' pending' : ''}" title="${source.pending ? 'アクセス許可が必要です' : '検索対象'}">
+            📁 ${escapeHtml(source.name)}${source.pending ? ' ⚠' : ''}
+            <button class="remove-source" type="button" data-remove-source="${source.id}" aria-label="${escapeHtml(source.name)}を解除">✕</button>
+          </span>`).join('');
+      }
+
+      async function removeSource(id) {
+        directorySources = directorySources.filter((source) => source.id !== id);
+        await persistHandles();
+        await scanSources(false);
+      }
+
+      function finishScan() {
+        updateFolderFilter();
+        elements.toolbar.hidden = false;
+        elements.rescanButton.disabled = !directorySources.length;
+        updateSort();
+        preloadDurations();
+      }
+
+      async function durationForSort(item) {
+        const key = videoKey(item);
+        if (durationCache.has(key)) return;
+        try {
+          let duration;
+          try { duration = await dbGet('settings', `duration:${key}`); } catch (_) {}
+          if (!Number.isFinite(duration) || duration < 0) {
+            let cached;
+            try { cached = await dbGet('thumbnails', key); } catch (_) {}
+            duration = cached?.duration;
+          }
+          if (!Number.isFinite(duration) || duration < 0) duration = await readDuration(item.file);
+          if (!Number.isFinite(duration) || duration < 0) throw new Error('duration unavailable');
+          rememberDuration(key, duration);
+          dbPut('settings', `duration:${key}`, duration).catch(() => {});
+        } catch (_) {
+          durationFailures.add(key);
+        }
+      }
+
+      function updateSort() {
+        render();
+      }
+
+      async function preloadDurations() {
+        const generation = ++durationSortGeneration;
+        const status = $('#durationStatus');
+        status.textContent = '';
+        const pending = allVideos.filter((item) => !durationCache.has(videoKey(item)) && !durationFailures.has(videoKey(item)));
+        let next = 0;
+        let done = 0;
+        const showProgress = () => { status.textContent = `時間を取得中 ${done}/${pending.length}`; };
+        if (pending.length) showProgress();
+        // Limit metadata reads; scanning every file at once can overwhelm the browser.
+        await Promise.all(Array.from({ length: Math.min(3, pending.length) }, async () => {
+          while (generation === durationSortGeneration && next < pending.length) {
+            await durationForSort(pending[next++]);
+            done += 1;
+            if (generation === durationSortGeneration) showProgress();
+          }
+        }));
+        if (generation !== durationSortGeneration) return;
+        reorderDurationCards();
+        const unknown = allVideos.filter((item) => !durationCache.has(videoKey(item))).length;
+        status.textContent = unknown ? `時間不明 ${unknown}本` : '';
+      }
+
+      function rememberDuration(key, duration) {
+        if (!Number.isFinite(duration) || duration < 0) return;
+        const changed = durationCache.get(key) !== duration;
+        durationCache.set(key, duration);
+        durationFailures.delete(key);
+        if (changed && elements.sort.value === 'duration' && durationOrderTimer === null) {
+          durationOrderTimer = setTimeout(() => {
+            durationOrderTimer = null;
+            reorderDurationCards();
+          }, 200);
+        }
+      }
+
+      function reorderDurationCards() {
+        if (elements.sort.value !== 'duration') return;
+        const previous = displayedVideos;
+        const sorted = sortVideos([...previous]);
+        const cards = [...elements.grid.children];
+        const cardByItem = new Map(cards.map((card) => [previous[Number(card.dataset.index)], card]));
+        // Move existing cards to preserve loaded images and pending extraction tasks.
+        if (sorted.some((item, index) => item !== previous[index])) stopPreview();
+        displayedVideos = sorted;
+        sorted.forEach((item, index) => {
+          const card = cardByItem.get(item);
+          if (!card) return;
+          card.dataset.index = String(index);
+          const thumb = card.querySelector('[data-thumb-index]');
+          const scenes = card.querySelector('[data-mini-scene-index]');
+          if (thumb) thumb.dataset.thumbIndex = String(index);
+          if (scenes) scenes.dataset.miniSceneIndex = String(index);
+          const duration = durationCache.get(videoKey(item));
+          if (Number.isFinite(duration)) card.querySelector('.duration-badge').textContent = formatTime(duration);
+          if (elements.grid.children[index] !== card) {
+            elements.grid.insertBefore(card, elements.grid.children[index] || null);
+          }
+        });
+      }
+
+      function localDayKey(date = new Date()) {
+        return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+      }
+
+      function recommendationKey(item) {
+        // Folder IDs can change when folders are reselected; use file identity instead.
+        return JSON.stringify([item.path, item.file.size, item.file.lastModified]);
+      }
+
+      function dailyScore(day, key) {
+        const text = `${day}|${key}`;
+        let hash = 2166136261;
+        for (let i = 0; i < text.length; i += 1) {
+          hash = Math.imul(hash ^ text.charCodeAt(i), 16777619);
+        }
+        hash = Math.imul(hash ^ (hash >>> 16), 0x85ebca6b);
+        hash = Math.imul(hash ^ (hash >>> 13), 0xc2b2ae35);
+        return (hash ^ (hash >>> 16)) >>> 0;
+      }
+
+      let recommendationDay = localDayKey();
+
+      function sortVideos(items) {
+        const collator = new Intl.Collator('ja', { numeric: true, sensitivity: 'base' });
+        const mode = elements.sort.value;
+        const direction = sortDescending ? -1 : 1;
+        const compareNames = (a, b) => collator.compare(a.path, b.path)
+          || (recommendationKey(a) < recommendationKey(b) ? -1 : recommendationKey(a) > recommendationKey(b) ? 1 : 0);
+        recommendationDay = localDayKey();
+        if (mode === 'recommended') {
+          return items.map((item) => {
+            const key = recommendationKey(item);
+            return { item, key, score: dailyScore(recommendationDay, key) };
+          }).sort((a, b) => direction * (a.score - b.score || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)))
+            .map(({ item }) => item);
+        }
+        return items.sort((a, b) => {
+          if (mode === 'modified') return direction * (a.file.lastModified - b.file.lastModified || compareNames(a, b));
+          if (mode === 'duration') {
+            const aTime = durationCache.get(videoKey(a));
+            const bTime = durationCache.get(videoKey(b));
+            const aKnown = Number.isFinite(aTime);
+            const bKnown = Number.isFinite(bTime);
+            if (aKnown !== bKnown) return aKnown ? -1 : 1;
+            if (aKnown && aTime !== bTime) return direction * (aTime - bTime);
+          }
+          return direction * compareNames(a, b);
+        });
+      }
+
+      function updateFolderFilter() {
+        const filter = $('#folderFilter');
+        const selected = filter.value;
+        const folders = new Map();
+        for (const source of directorySources) folders.set(JSON.stringify([source.id, '']), source.name);
+        for (const item of allVideos) {
+          const parts = (item.relativePath || item.name).split('/');
+          parts.pop();
+          const source = directorySources.find((source) => source.id === item.sourceId);
+          for (let i = 1; i <= parts.length; i += 1) {
+            const folder = parts.slice(0, i).join('/');
+            folders.set(JSON.stringify([item.sourceId, folder]), `${source?.name || ''}/${folder}`);
+          }
+        }
+        filter.replaceChildren(new Option('すべてのフォルダ', ''));
+        for (const [key, label] of [...folders].sort((a, b) => a[1].localeCompare(b[1], 'ja', { numeric: true }))) {
+          filter.add(new Option(label, key));
+        }
+        filter.value = folders.has(selected) ? selected : '';
+      }
+
+      function render() {
+        stopPreview();
+        if (observer) observer.disconnect();
+        if (miniSceneObserver) miniSceneObserver.disconnect();
+        miniSceneRenderId += 1;
+        const renderId = miniSceneRenderId;
+        miniSceneQueue = [];
+        for (const url of thumbUrls) URL.revokeObjectURL(url);
+        thumbUrls.clear();
+
+        const term = elements.search.value.trim().toLocaleLowerCase('ja');
+        const selectedFolder = $('#folderFilter').value;
+        const [sourceId, folder] = selectedFolder ? JSON.parse(selectedFolder) : [null, ''];
+        displayedVideos = sortVideos(allVideos.filter((video) =>
+          (!term || video.name.toLocaleLowerCase('ja').includes(term)) &&
+          (!sourceId || (video.sourceId === sourceId && (!folder || video.relativePath?.startsWith(`${folder}/`))))
+        ));
+        elements.grid.innerHTML = displayedVideos.map((video, index) => {
+          const folder = video.path.includes('/') ? video.path.slice(0, video.path.lastIndexOf('/')) : 'ルート';
+          const selected = videoKey(video) === currentVideoKey;
+          return `
+            <button class="card${selected ? ' selected' : ''}" type="button" data-index="${index}" title="${escapeHtml(video.path)}" aria-pressed="${selected}">
+              <div class="poster" style="--h:${hueFor(video.path)}">
+                <div class="fallback-art"></div>
+                <img class="thumb" alt="" data-thumb-index="${index}">
+                <video class="preview-video" muted loop playsinline preload="metadata"></video>
+                <span class="play-badge">▶</span>
+                <span class="duration-badge" aria-label="再生時間">${durationCache.has(videoKey(video)) ? formatTime(durationCache.get(videoKey(video))) : ''}</span>
+              </div>
+              <div class="card-scenes" data-mini-scene-index="${index}" data-scene-count="${miniSceneCount}" aria-label="代表シーン">
+                ${miniSceneRatios(miniSceneCount).map(ratio => `<span class="card-scene loading" data-mini-ratio="${ratio}" role="button" tabindex="0" aria-label="動画の${Math.round(ratio * 100)}%から再生" title="画像を読み込み中・クリックでこの位置から再生"></span>`).join('')}
+              </div>
+              <div class="card-title">${escapeHtml(displayTitle(video.name))}</div>
+              <div class="card-meta">${escapeHtml(folder)} ・ ${formatBytes(video.file.size)}</div>
+            </button>`;
+        }).join('');
+
+        const totalSize = displayedVideos.reduce((sum, video) => sum + video.file.size, 0);
+        setLibrarySummary(allVideos.length
+          ? `${displayedVideos.length} 本${displayedVideos.length !== allVideos.length ? ` / 全 ${allVideos.length} 本` : ''} ・ ${formatBytes(totalSize)}`
+          : '動画ファイルが見つかりませんでした', !allVideos.length);
+
+        observer = new IntersectionObserver((entries) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            observer.unobserve(entry.target);
+            const index = Number(entry.target.dataset.thumbIndex);
+            loadThumbnail(displayedVideos[index], entry.target);
+          }
+        }, { rootMargin: '350px' });
+        document.querySelectorAll('[data-thumb-index]').forEach((image) => observer.observe(image));
+
+        miniSceneObserver = new IntersectionObserver((entries) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            miniSceneObserver.unobserve(entry.target);
+            const index = Number(entry.target.dataset.miniSceneIndex);
+            queueMiniScenes(displayedVideos[index], entry.target, renderId);
+          }
+        }, { rootMargin: '450px' });
+        document.querySelectorAll('[data-mini-scene-index]').forEach((container) => miniSceneObserver.observe(container));
+      }
+
+      async function loadThumbnail(video, image) {
+        if (!video || !image.isConnected) return;
+        const cacheKey = videoKey(video);
+        const durationLabel = image.closest('.poster')?.querySelector('.duration-badge');
+        let cached = null;
+        let blob = null;
+        let duration = durationCache.get(cacheKey);
+        try { cached = await dbGet('thumbnails', cacheKey); } catch (_) {}
+        if (cached instanceof Blob) {
+          blob = cached;
+        } else if (cached?.blob instanceof Blob) {
+          blob = cached.blob;
+          if (Number.isFinite(cached.duration)) duration = cached.duration;
+        }
+        if (!blob) {
+          try {
+            const generated = await createThumbnail(video.file);
+            blob = generated?.blob || null;
+            duration = generated?.duration;
+            if (blob) dbPut('thumbnails', cacheKey, { blob, duration }).catch(() => {});
+          } catch (_) { return; }
+        }
+        if (Number.isFinite(duration) && duration >= 0) {
+          rememberDuration(cacheKey, duration);
+          if (durationLabel?.isConnected) durationLabel.textContent = formatTime(duration);
+        } else {
+          readDuration(video.file).then((loadedDuration) => {
+            rememberDuration(cacheKey, loadedDuration);
+            if (durationLabel?.isConnected) durationLabel.textContent = formatTime(loadedDuration);
+            if (blob) dbPut('thumbnails', cacheKey, { blob, duration: loadedDuration }).catch(() => {});
+          }).catch(() => {});
+        }
+        if (!blob || !image.isConnected) return;
+        const url = URL.createObjectURL(blob);
+        thumbUrls.add(url);
+        image.onload = () => image.classList.add('ready');
+        image.src = url;
+      }
+
+      function queueMiniScenes(item, container, renderId) {
+        if (!item || !container) return;
+        miniSceneQueue.push({ item, container, renderId });
+        pumpMiniSceneQueue();
+      }
+
+      function pumpMiniSceneQueue() {
+        while (miniSceneActive < 2 && miniSceneQueue.length) {
+          const task = miniSceneQueue.shift();
+          miniSceneActive += 1;
+          loadMiniScenes(task.item, task.container, task.renderId)
+            .catch(() => {
+              if (task.renderId === miniSceneRenderId) showMiniScenes(task.container, []);
+            })
+            .finally(() => {
+              miniSceneActive -= 1;
+              pumpMiniSceneQueue();
+            });
+        }
+      }
+
+      function showMiniScenes(container, scenes) {
+        if (!container.isConnected) return;
+        container.innerHTML = '';
+        const ratios = miniSceneRatios(Number(container.dataset.sceneCount));
+        for (let index = 0; index < ratios.length; index += 1) {
+          const scene = scenes[index];
+          // Keep all frames in the layout, even when extraction or image loading fails.
+          const frame = document.createElement('span');
+          frame.className = 'card-scene';
+          const showUnavailable = () => {
+            frame.replaceChildren();
+
+            frame.className = 'card-scene unavailable';
+            frame.title = 'シーン画像なし・クリックでこの位置から再生';
+          };
+          frame.dataset.miniRatio = String(ratios[index]);
+          if (Number.isFinite(scene?.time)) frame.dataset.miniSeek = String(scene.time);
+          frame.setAttribute('role', 'button');
+          frame.tabIndex = 0;
+          frame.setAttribute('aria-label', Number.isFinite(scene?.time) ? `${formatTime(scene.time)}から再生` : `動画の${Math.round(ratios[index] * 100)}%から再生`);
+          container.append(frame);
+          if (!scene?.imageUrl) {
+            showUnavailable();
+            continue;
+          }
+          frame.dataset.miniSeek = String(scene.time);
+          frame.setAttribute('role', 'button');
+          frame.tabIndex = 0;
+          frame.setAttribute('aria-label', `${formatTime(scene.time)}から再生`);
+          const image = document.createElement('img');
+          image.onerror = showUnavailable;
+          image.src = scene.imageUrl;
+          image.alt = `${formatTime(scene.time)}のシーン`;
+          image.title = formatTime(scene.time);
+          frame.append(image);
+        }
+      }
+
+      async function loadMiniScenes(item, container, renderId) {
+        const count = Number(container.dataset.sceneCount);
+        const cacheKey = `${videoKey(item)}:count:${count}`;
+        let scenes = miniSceneCache.get(cacheKey);
+        if (!scenes) {
+          scenes = await extractMiniScenes(item.file, count);
+          if (scenes.length) {
+            miniSceneCache.set(cacheKey, scenes);
+            if (miniSceneCache.size > 40) miniSceneCache.delete(miniSceneCache.keys().next().value);
+          }
+        }
+        if (renderId !== miniSceneRenderId || !container.isConnected) return;
+        showMiniScenes(container, scenes);
+      }
+
+      async function extractMiniScenes(file, count) {
+        const extractor = document.createElement('video');
+        const url = URL.createObjectURL(file);
+        extractor.muted = true;
+        extractor.preload = 'auto';
+        extractor.playsInline = true;
+        extractor.src = url;
+        const scenes = [];
+        try {
+          await waitForMetadata(extractor);
+          if (!Number.isFinite(extractor.duration) || extractor.duration < 1) return [];
+          for (const ratio of miniSceneRatios(count)) {
+            const time = extractor.duration * ratio;
+            const scene = { time, imageUrl: null };
+            scenes.push(scene);
+            try {
+            await seekForScene(extractor, time);
+            if (!extractor.videoWidth || !extractor.videoHeight) continue;
+            const canvas = document.createElement('canvas');
+            canvas.width = 160;
+            canvas.height = 90;
+            const context = canvas.getContext('2d');
+            const scale = Math.max(canvas.width / extractor.videoWidth, canvas.height / extractor.videoHeight);
+            const width = extractor.videoWidth * scale;
+            const height = extractor.videoHeight * scale;
+            context.drawImage(extractor, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+            scene.imageUrl = canvas.toDataURL('image/jpeg', .68);
+            } catch (_) { /* Preserve the timestamp even if this frame fails. */ }
+          }
+          return scenes;
+        } catch (_) {
+          return [];
+        } finally {
+          extractor.pause();
+          extractor.removeAttribute('src');
+          extractor.load();
+          URL.revokeObjectURL(url);
+        }
+      }
+
+      function createThumbnail(file) {
+        return new Promise((resolve, reject) => {
+          const video = document.createElement('video');
+          const url = URL.createObjectURL(file);
+          let settled = false;
+          const timer = setTimeout(() => finish(null, new Error('timeout')), 12000);
+          let duration = null;
+          const finish = (blob, error) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            video.removeAttribute('src');
+            video.load();
+            URL.revokeObjectURL(url);
+            error ? reject(error) : resolve({ blob, duration });
+          };
+          video.muted = true;
+          video.preload = 'metadata';
+          video.playsInline = true;
+          video.onerror = () => finish(null, new Error('decode error'));
+          video.onloadedmetadata = () => {
+            duration = Number.isFinite(video.duration) ? video.duration : null;
+            const target = Number.isFinite(video.duration) && video.duration > 1
+              ? Math.min(Math.max(video.duration * .12, .1), 12)
+              : .1;
+            try { video.currentTime = target; } catch (_) { finish(null, new Error('seek error')); }
+          };
+          video.onseeked = () => {
+            if (!video.videoWidth || !video.videoHeight) return finish(null, new Error('no dimensions'));
+            const canvas = document.createElement('canvas');
+            canvas.width = 480;
+            canvas.height = 270;
+            const context = canvas.getContext('2d');
+            const scale = Math.max(canvas.width / video.videoWidth, canvas.height / video.videoHeight);
+            const width = video.videoWidth * scale;
+            const height = video.videoHeight * scale;
+            context.drawImage(video, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+            canvas.toBlob((blob) => blob ? finish(blob) : finish(null, new Error('canvas error')), 'image/jpeg', .78);
+          };
+          video.src = url;
+          video.load();
+        });
+      }
+
+      function readDuration(file) {
+        return new Promise((resolve, reject) => {
+          const video = document.createElement('video');
+          const url = URL.createObjectURL(file);
+          let settled = false;
+          const timer = setTimeout(() => finish(null, new Error('metadata timeout')), 10000);
+          const finish = (duration, error) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            video.removeAttribute('src');
+            video.load();
+            URL.revokeObjectURL(url);
+            error ? reject(error) : resolve(duration);
+          };
+          video.preload = 'metadata';
+          video.onloadedmetadata = () => Number.isFinite(video.duration)
+            ? finish(video.duration)
+            : finish(null, new Error('duration unavailable'));
+          video.onerror = () => finish(null, new Error('decode error'));
+          video.src = url;
+          video.load();
+        });
+      }
+
+      const splitHandle = $('#splitHandle');
+      let splitRatio = 1.35 / 2.35;
+      let splitPointer = null;
+      let splitGrabOffset = 0;
+      try {
+        const saved = Number(localStorage.getItem('localflix.splitRatio'));
+        if (Number.isFinite(saved) && saved > 0 && saved < 1) splitRatio = saved;
+      } catch (_) {}
+
+      function splitBounds(width, ratio) {
+        const available = Math.max(0, width - 24);
+        const minimum = Math.min(320, available / 2);
+        return { available, minimum, maximum: available - minimum,
+          player: Math.max(minimum, Math.min(available - minimum, available * ratio)) };
+      }
+
+      function updateSplitWidth() {
+        if (playerMode === 'theater' || !matchMedia('(min-width: 1001px)').matches) return;
+        const bounds = splitBounds(elements.contentLayout.clientWidth, splitRatio);
+        elements.contentLayout.style.setProperty('--player-width', `${bounds.player}px`);
+        const percent = (value) => Math.round(value / (bounds.available || 1) * 100);
+        splitHandle.setAttribute('aria-valuemin', String(percent(bounds.minimum)));
+        splitHandle.setAttribute('aria-valuemax', String(percent(bounds.maximum)));
+        splitHandle.setAttribute('aria-valuenow', String(percent(bounds.player)));
+        splitHandle.setAttribute('aria-valuetext', `再生領域 ${percent(bounds.player)}%`);
+      }
+
+      function saveSplitWidth() {
+        try { localStorage.setItem('localflix.splitRatio', String(splitRatio)); } catch (_) {}
+      }
+
+      splitHandle.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        splitPointer = event.pointerId;
+        splitGrabOffset = event.clientX - splitHandle.getBoundingClientRect().left;
+        splitHandle.setPointerCapture(event.pointerId);
+        splitHandle.focus();
+        stopPreview();
+        splitHandle.classList.add('dragging');
+        document.body.classList.add('resizing-split');
+      });
+      splitHandle.addEventListener('pointermove', (event) => {
+        if (event.pointerId !== splitPointer) return;
+        const rect = elements.contentLayout.getBoundingClientRect();
+        const bounds = splitBounds(rect.width, splitRatio);
+        const width = Math.max(bounds.minimum, Math.min(bounds.maximum, event.clientX - rect.left - splitGrabOffset));
+        splitRatio = width / (bounds.available || 1);
+        updateSplitWidth();
+      });
+      function finishSplitDrag() {
+        if (splitPointer === null) return;
+        const pointer = splitPointer;
+        splitPointer = null;
+        if (splitHandle.hasPointerCapture(pointer)) splitHandle.releasePointerCapture(pointer);
+        splitHandle.classList.remove('dragging');
+        document.body.classList.remove('resizing-split');
+        saveSplitWidth();
+      }
+      splitHandle.addEventListener('pointerup', finishSplitDrag);
+      splitHandle.addEventListener('pointercancel', finishSplitDrag);
+      splitHandle.addEventListener('lostpointercapture', finishSplitDrag);
+      window.addEventListener('blur', finishSplitDrag);
+      splitHandle.addEventListener('dblclick', () => {
+        splitRatio = 1.35 / 2.35;
+        updateSplitWidth();
+        saveSplitWidth();
+      });
+      splitHandle.addEventListener('keydown', (event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        const b = splitBounds(elements.contentLayout.clientWidth, splitRatio);
+        let width = b.player + (event.key === 'ArrowLeft' ? -20 : 20);
+        if (event.key === 'Home') width = b.minimum;
+        if (event.key === 'End') width = b.maximum;
+        splitRatio = Math.max(b.minimum, Math.min(b.maximum, width)) / (b.available || 1);
+        updateSplitWidth();
+        saveSplitWidth();
+      });
+      new ResizeObserver(updateSplitWidth).observe(elements.contentLayout);
+      window.addEventListener('resize', updateSplitWidth);
+
+      function applyPlayerMode() {
+        finishSplitDrag();
+        const theater = playerMode === 'theater';
+        elements.contentLayout.classList.toggle('theater-mode', theater);
+        elements.modeToggle.textContent = theater ? '◫ 分割モード' : '▣ シアターモード';
+        elements.modeToggle.title = theater ? '左右の分割表示に戻す' : '上部固定のシアター表示にする';
+        elements.modeToggle.setAttribute('aria-pressed', String(theater));
+        updateSplitWidth();
+      }
+
+      function togglePlayerMode() {
+        playerMode = playerMode === 'theater' ? 'split' : 'theater';
+        applyPlayerMode();
+        if (playerMode === 'theater') {
+          requestAnimationFrame(() => elements.playerPane.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+        }
+      }
+
+      function waitForMetadata(video) {
+        return new Promise((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error('metadata timeout')), 15000);
+          const cleanup = () => {
+            clearTimeout(timer);
+            video.removeEventListener('loadedmetadata', onLoaded);
+            video.removeEventListener('error', onError);
+          };
+          const onLoaded = () => { cleanup(); resolve(); };
+          const onError = () => { cleanup(); reject(new Error('decode error')); };
+          video.addEventListener('loadedmetadata', onLoaded);
+          video.addEventListener('error', onError);
+          video.load();
+        });
+      }
+
+      function seekForScene(video, time) {
+        return new Promise((resolve, reject) => {
+          let settled = false;
+          const timer = setTimeout(() => finish(false), 9000);
+          const finish = (success) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            video.removeEventListener('seeked', onSeeked);
+            video.removeEventListener('error', onError);
+            success ? resolve() : reject(new Error('seek error'));
+          };
+          const onSeeked = () => {
+            setTimeout(() => finish(true), 80);
+          };
+          const onError = () => finish(false);
+          video.addEventListener('seeked', onSeeked);
+          video.addEventListener('error', onError);
+          try { video.currentTime = time; } catch (_) { finish(false); }
+        });
+      }
+
+      function appendSceneCard(time, imageUrl) {
+        const button = document.createElement('button');
+        button.className = 'scene-card';
+        button.type = 'button';
+        button.dataset.seek = String(time);
+        button.title = `${formatTime(time)}へ移動`;
+        const image = document.createElement('img');
+        image.src = imageUrl;
+        image.alt = `${formatTime(time)}のシーン`;
+        const label = document.createElement('span');
+        label.className = 'scene-time';
+        label.textContent = formatTime(time);
+        button.append(image, label);
+        elements.sceneStrip.append(button);
+      }
+
+      async function generateScenes(item) {
+        const generationId = ++sceneGenerationId;
+        const cacheKey = videoKey(item);
+        const cachedScenes = sceneCache.get(cacheKey);
+        if (cachedScenes) {
+          elements.scenes.hidden = false;
+          elements.sceneStrip.innerHTML = '';
+          cachedScenes.forEach((scene) => appendSceneCard(scene.time, scene.imageUrl));
+          elements.scenesStatus.textContent = `${cachedScenes.length}シーン`;
+          return;
+        }
+        const placeholderCount = 7;
+        elements.scenes.hidden = false;
+        elements.scenesStatus.textContent = '抽出中…';
+        elements.sceneStrip.innerHTML = '<span class="scene-placeholder"></span>'.repeat(placeholderCount);
+
+        const extractor = document.createElement('video');
+        const extractionUrl = URL.createObjectURL(item.file);
+        extractor.muted = true;
+        extractor.preload = 'auto';
+        extractor.playsInline = true;
+        extractor.src = extractionUrl;
+
+        try {
+          await waitForMetadata(extractor);
+          if (generationId !== sceneGenerationId) return;
+          const duration = extractor.duration;
+          if (!Number.isFinite(duration) || duration < 1) throw new Error('duration unavailable');
+          const count = duration < 90 ? 5 : duration < 900 ? 7 : 9;
+          const times = Array.from({ length: count }, (_, index) => duration * ((index + 1) / (count + 1)));
+          const generatedScenes = [];
+          elements.sceneStrip.innerHTML = '';
+
+          for (const time of times) {
+            if (generationId !== sceneGenerationId) return;
+            await seekForScene(extractor, time);
+            if (generationId !== sceneGenerationId) return;
+
+            const canvas = document.createElement('canvas');
+            canvas.width = 320;
+            canvas.height = 180;
+            const context = canvas.getContext('2d');
+            const scale = Math.max(canvas.width / extractor.videoWidth, canvas.height / extractor.videoHeight);
+            const width = extractor.videoWidth * scale;
+            const height = extractor.videoHeight * scale;
+            context.drawImage(extractor, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+
+            const imageUrl = canvas.toDataURL('image/jpeg', .76);
+            generatedScenes.push({ time, imageUrl });
+            appendSceneCard(time, imageUrl);
+          }
+          if (generationId === sceneGenerationId) {
+            sceneCache.set(cacheKey, generatedScenes);
+            if (sceneCache.size > 12) sceneCache.delete(sceneCache.keys().next().value);
+            elements.scenesStatus.textContent = `${count}シーン`;
+          }
+        } catch (_) {
+          if (generationId === sceneGenerationId) {
+            elements.sceneStrip.innerHTML = '';
+            elements.scenesStatus.textContent = 'シーンを抽出できませんでした';
+          }
+        } finally {
+          extractor.pause();
+          extractor.removeAttribute('src');
+          extractor.load();
+          URL.revokeObjectURL(extractionUrl);
+        }
+      }
+
+      function playVideo(index, startTime = 0, startRatio = null) {
+        const video = displayedVideos[index];
+        if (!video) return;
+        stopPreview();
+        elements.player.pause();
+        elements.player.removeAttribute('src');
+        elements.player.load();
+        elements.player.onloadedmetadata = null;
+        if (playerUrl) URL.revokeObjectURL(playerUrl);
+        playerUrl = URL.createObjectURL(video.file);
+        currentVideoKey = videoKey(video);
+        elements.player.src = playerUrl;
+        if (startTime > 0 || startRatio !== null) {
+          elements.player.onloadedmetadata = () => {
+            elements.player.onloadedmetadata = null;
+            const duration = elements.player.duration;
+            const target = startRatio !== null && Number.isFinite(duration) ? duration * startRatio : startTime;
+            elements.player.currentTime = Math.min(target, Number.isFinite(duration) ? duration : target);
+          };
+        }
+        elements.playerTitle.textContent = displayTitle(video.name);
+        elements.playerPath.textContent = `${video.path} ・ ${formatBytes(video.file.size)}`;
+        elements.playerError.classList.remove('show');
+        elements.playerPane.hidden = false;
+        elements.playerPane.scrollTop = 0;
+        elements.contentLayout.classList.add('player-open');
+        applyPlayerMode();
+        document.querySelectorAll('.card').forEach((card) => {
+          const selected = displayedVideos[Number(card.dataset.index)] === video;
+          card.classList.toggle('selected', selected);
+          card.setAttribute('aria-pressed', String(selected));
+        });
+        elements.player.play().catch(() => {});
+        generateScenes(video);
+        if (playerMode === 'theater') {
+          requestAnimationFrame(() => elements.playerPane.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+        }
+      }
+
+      function closePlayer() {
+        elements.player.onloadedmetadata = null;
+        elements.player.pause();
+        elements.player.removeAttribute('src');
+        elements.player.load();
+        if (playerUrl) URL.revokeObjectURL(playerUrl);
+        playerUrl = null;
+        currentVideoKey = null;
+        sceneGenerationId += 1;
+        elements.scenes.hidden = true;
+        elements.scenesStatus.textContent = '';
+        elements.sceneStrip.innerHTML = '';
+        elements.playerPane.hidden = true;
+        elements.contentLayout.classList.remove('player-open');
+        document.querySelectorAll('.card.selected').forEach((card) => {
+          card.classList.remove('selected');
+          card.setAttribute('aria-pressed', 'false');
+        });
+      }
+
+      function schedulePreview(card, index) {
+        if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+        const item = displayedVideos[index];
+        if (!item || videoKey(item) === currentVideoKey) return;
+        stopPreview();
+        previewTimer = setTimeout(() => startPreview(card, index), 450);
+      }
+
+      function startPreview(card, index) {
+        const item = displayedVideos[index];
+        const preview = card?.querySelector('.preview-video');
+        if (!item || !preview || !card.isConnected) return;
+        previewCard = card;
+        previewUrl = URL.createObjectURL(item.file);
+        preview.muted = true;
+        preview.loop = true;
+        preview.playsInline = true;
+        preview.onloadedmetadata = () => {
+          if (previewCard !== card) return;
+          if (Number.isFinite(preview.duration) && preview.duration > 1) {
+            try { preview.currentTime = Math.min(Math.max(preview.duration * .12, .1), 10); } catch (_) {}
+          }
+          preview.play().catch(() => {});
+        };
+        preview.onplaying = () => {
+          if (previewCard === card) preview.classList.add('active');
+        };
+        preview.onerror = () => stopPreview();
+        preview.src = previewUrl;
+        preview.load();
+      }
+
+      function stopPreview() {
+        if (previewTimer) clearTimeout(previewTimer);
+        previewTimer = null;
+        if (previewCard) {
+          const preview = previewCard.querySelector('.preview-video');
+          if (preview) {
+            preview.pause();
+            preview.classList.remove('active');
+            preview.onloadedmetadata = null;
+            preview.onplaying = null;
+            preview.onerror = null;
+            preview.removeAttribute('src');
+            preview.load();
+          }
+        }
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        previewCard = null;
+        previewUrl = null;
+      }
+
+      async function restoreFolders() {
+        if (!('showDirectoryPicker' in window)) return;
+        try {
+          let saved = await dbGet('settings', 'directoryHandles');
+          if (!Array.isArray(saved) || !saved.length) {
+            const oldHandle = await dbGet('settings', 'directoryHandle');
+            saved = oldHandle ? [{ handle: oldHandle, name: oldHandle.name }] : [];
+          }
+          directorySources = saved
+            .map((item, index) => item?.handle
+              ? {
+                  id: item.id || crypto.randomUUID?.() || `saved-${index}-${Date.now()}`,
+                  name: item.name || item.handle.name,
+                  kind: 'handle',
+                  handle: item.handle,
+                  pending: true
+                }
+              : item?.queryPermission
+                ? {
+                    id: crypto.randomUUID?.() || `saved-${index}-${Date.now()}`,
+                    name: item.name,
+                    kind: 'handle',
+                    handle: item,
+                    pending: true
+                  }
+                : null)
+            .filter(Boolean);
+          if (!directorySources.length) return;
+          updateSourceDisplay();
+          await persistHandles();
+          await scanSources(false);
+        } catch (_) {}
+      }
+
+      let miniSceneCount = 3;
+      function miniSceneRatios(count) {
+        return Array.from({ length: count }, (_, index) => (index + 1) / (count + 1));
+      }
+      const thumbnailSize = $('#thumbnailSize');
+      function applyThumbnailSize(value) {
+        const settings = { small: [148, 2], medium: [224, 3], large: [300, 4] };
+        const size = Object.hasOwn(settings, value) ? value : 'medium';
+        const [width, count] = settings[size];
+        miniSceneCount = count;
+        document.documentElement.style.setProperty('--thumbnail-width', `${width}px`);
+        document.documentElement.style.setProperty('--mini-scene-count', count);
+        thumbnailSize.querySelectorAll('[data-thumbnail-size]').forEach(button => {
+          button.setAttribute('aria-pressed', String(button.dataset.thumbnailSize === size));
+        });
+        return size;
+      }
+      try { applyThumbnailSize(localStorage.getItem('localflix.thumbnailSize')); } catch (_) { applyThumbnailSize('medium'); }
+      thumbnailSize.addEventListener('click', event => {
+        const button = event.target.closest('[data-thumbnail-size]');
+        if (!button) return;
+        const size = applyThumbnailSize(button.dataset.thumbnailSize);
+        render();
+        try { localStorage.setItem('localflix.thumbnailSize', size); } catch (_) {}
+      });
+      const topbar = $('#topbar');
+      const headerToggle = $('#headerToggle');
+      function syncHeaderHeight() {
+        document.documentElement.style.setProperty('--header-height', `${topbar.getBoundingClientRect().height}px`);
+      }
+      function setHeaderCollapsed(collapsed) {
+        topbar.classList.toggle('collapsed', collapsed);
+        document.documentElement.classList.toggle('header-collapsed', collapsed);
+        headerToggle.setAttribute('aria-expanded', String(!collapsed));
+        const label = collapsed ? 'ヘッダーを展開する' : 'ヘッダーを折りたたむ';
+        headerToggle.title = label;
+        headerToggle.setAttribute('aria-label', label);
+        if (collapsed) $('#sourceMenu').open = false;
+        syncHeaderHeight();
+      }
+      headerToggle.addEventListener('click', () => {
+        if (directorySources.some(source => source.pending)) {
+          setHeaderCollapsed(false);
+          return;
+        }
+        const collapsed = !topbar.classList.contains('collapsed');
+        setHeaderCollapsed(collapsed);
+        try { localStorage.setItem('localflix.headerCollapsed', String(collapsed)); } catch (_) {}
+      });
+      try { setHeaderCollapsed(localStorage.getItem('localflix.headerCollapsed') === 'true'); } catch (_) {}
+      new ResizeObserver(syncHeaderHeight).observe(topbar);
+      syncHeaderHeight();
+      function updateSelectTitle(event) {
+        const select = event.currentTarget;
+        select.title = select.selectedOptions[0]?.textContent || '';
+      }
+      for (const select of [$('#folderFilter'), elements.sort]) {
+        select.addEventListener('change', updateSelectTitle);
+        new MutationObserver(() => updateSelectTitle({ currentTarget: select })).observe(select, { childList: true });
+        updateSelectTitle({ currentTarget: select });
+      }
+
+      elements.folderButton.addEventListener('click', chooseFolder);
+      elements.fallback.addEventListener('change', () => {
+        if (elements.fallback.files?.length) scanFallbackFiles(elements.fallback.files);
+      });
+      elements.rescanButton.addEventListener('click', () => scanSources(true));
+      elements.sources.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-remove-source]');
+        if (button) removeSource(button.dataset.removeSource);
+      });
+      elements.search.addEventListener('input', render);
+      $('#folderFilter').addEventListener('change', render);
+      elements.sort.addEventListener('change', updateSort);
+      $('#sortDirection').addEventListener('click', () => {
+        sortDescending = !sortDescending;
+        const button = $('#sortDirection');
+        const label = sortDescending ? '降順' : '昇順';
+        const next = sortDescending ? '昇順' : '降順';
+        button.classList.toggle('descending', sortDescending);
+        button.title = `${label}（クリックで${next}）`;
+        button.setAttribute('aria-label', `並び順：${label}。${next}に切り替え`);
+        if (elements.sort.value === 'duration') reorderDurationCards();
+        else render();
+      });
+      // Also refresh after midnight or returning to a tab left open overnight.
+      function refreshDailyOrder() {
+        if (elements.sort.value === 'recommended' && recommendationDay !== localDayKey()) render();
+      }
+      setInterval(refreshDailyOrder, 30000);
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) refreshDailyOrder();
+      });
+      elements.grid.addEventListener('click', (event) => {
+        const card = event.target.closest('.card');
+        if (!card) return;
+        const scene = event.target.closest('[data-mini-seek], [data-mini-ratio]');
+        playVideo(Number(card.dataset.index), scene?.dataset.miniSeek !== undefined ? Number(scene.dataset.miniSeek) : 0, scene && scene.dataset.miniSeek === undefined ? Number(scene.dataset.miniRatio) : null);
+        if (scene) requestAnimationFrame(() => elements.playerPane.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+      });
+      elements.grid.addEventListener('keydown', (event) => {
+        const scene = event.target.closest('[data-mini-seek], [data-mini-ratio]');
+        if (scene && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          event.stopPropagation();
+          scene.click();
+        }
+      });
+      elements.grid.addEventListener('pointerover', (event) => {
+        const card = event.target.closest('.card');
+        if (!card || card.contains(event.relatedTarget)) return;
+        schedulePreview(card, Number(card.dataset.index));
+      });
+      elements.grid.addEventListener('pointerout', (event) => {
+        const card = event.target.closest('.card');
+        if (!card || card.contains(event.relatedTarget)) return;
+        stopPreview();
+      });
+      elements.closePlayer.addEventListener('click', closePlayer);
+      elements.modeToggle.addEventListener('click', togglePlayerMode);
+      elements.sceneStrip.addEventListener('click', (event) => {
+        const scene = event.target.closest('[data-seek]');
+        if (!scene) return;
+        const time = Number(scene.dataset.seek);
+        if (!Number.isFinite(time)) return;
+        elements.player.currentTime = time;
+        elements.player.play().catch(() => {});
+        elements.playerPane.scrollTo({ top: 0, behavior: 'smooth' });
+        requestAnimationFrame(() => elements.playerPane.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+      });
+      const videoStage = $('#videoStage');
+      const loopToggle = $('#loopToggle');
+      let controlsTimer = null;
+      function revealPlayerControls() {
+        clearTimeout(controlsTimer);
+        videoStage.classList.remove('controls-hidden');
+        if (elements.player.paused || elements.player.ended || elements.playerPane.hidden) return;
+        controlsTimer = setTimeout(() => {
+          if (videoStage.querySelector('button:hover, button:focus-visible')) {
+            revealPlayerControls();
+            return;
+          }
+          videoStage.classList.add('controls-hidden');
+        }, 1500);
+      }
+      for (const event of ['pointermove', 'pointerdown', 'pointerleave', 'focusin', 'keydown']) {
+        videoStage.addEventListener(event, revealPlayerControls);
+      }
+      for (const event of ['play', 'pause', 'ended', 'emptied']) {
+        elements.player.addEventListener(event, revealPlayerControls);
+      }
+      function updateLoopButton() {
+        const enabled = elements.player.loop;
+        loopToggle.setAttribute('aria-pressed', String(enabled));
+        loopToggle.setAttribute('aria-label', `ループ再生を${enabled ? 'オフ' : 'オン'}にする`);
+        loopToggle.title = `ループ再生：${enabled ? 'オン' : 'オフ'}`;
+      }
+      try { elements.player.loop = localStorage.getItem('localflix.loop') === 'true'; } catch (_) {}
+      updateLoopButton();
+      loopToggle.addEventListener('click', () => {
+        elements.player.loop = !elements.player.loop;
+        try { localStorage.setItem('localflix.loop', String(elements.player.loop)); } catch (_) {}
+        updateLoopButton();
+        revealPlayerControls();
+      });
+      elements.player.addEventListener('error', () => {
+        elements.playerError.classList.add('show');
+        clearTimeout(controlsTimer);
+        videoStage.classList.remove('controls-hidden');
+      });
+      window.addEventListener('beforeunload', () => {
+        stopPreview();
+        closePlayer();
+        for (const url of thumbUrls) URL.revokeObjectURL(url);
+      });
+
+      applyPlayerMode();
+      restoreFolders();
+    })();
+  </script>
+</body>
+</html>
