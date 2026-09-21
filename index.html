@@ -1993,9 +1993,15 @@
           videoStage.classList.add('controls-hidden');
         }, 1500);
       }
-      for (const event of ['pointermove', 'pointerdown', 'pointerleave', 'focusin', 'keydown']) {
+      for (const event of ['pointerenter', 'pointermove', 'pointerdown', 'focusin', 'keydown']) {
         videoStage.addEventListener(event, revealPlayerControls);
       }
+      videoStage.addEventListener('pointerleave', (event) => {
+        if (event.pointerType === 'touch') return;
+        clearTimeout(controlsTimer);
+        controlsTimer = null;
+        videoStage.classList.add('controls-hidden');
+      });
       for (const event of ['play', 'pause', 'ended', 'emptied']) {
         elements.player.addEventListener(event, revealPlayerControls);
       }
