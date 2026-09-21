@@ -730,6 +730,25 @@
       .folder-summary .summary { font-size: 11px; }
     }
     .sources, .tag-filter-panel { max-height: min(420px, max(100px, calc(100dvh - var(--header-height, 72px) - 24px))); }
+    .tag-filter-panel { width: min(420px, calc(100vw - 36px)); }
+    .tag-choice-search { margin-top: 8px; min-height: 38px; }
+    #tagFilterChoices, #videoTagChoices { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 7px; }
+    .tag-choice-group { flex: 0 0 100%; min-width: 0; border: 1px solid var(--line); border-radius: 9px; padding: 10px; }
+    .tag-choice-heading { display: flex; align-items: center; gap: 8px; }
+    .tag-choice-heading > input { accent-color: #e5e7eb; flex-shrink: 0; }
+    .tag-choice-toggle { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; border: 0; padding: 2px 0; background: transparent; text-align: left; cursor: pointer; }
+    .tag-choice-toggle::before { content: '▾'; flex-shrink: 0; }
+    .tag-choice-toggle[aria-expanded="false"]::before { content: '▸'; }
+    .tag-choice-name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 700; font-size: 13px; }
+    .tag-choice-count { color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .tag-choice-items { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .tag-chip { position: relative; max-width: 100%; cursor: pointer; }
+    .tag-chip > input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+    .tag-chip > span { display: block; border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px; font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; background: var(--panel-2); }
+    .tag-chip > input:checked + span { background: #e5e7eb; color: #151b25; border-color: #fff; }
+    .tag-chip > input:focus-visible + span, .tag-choice-toggle:focus-visible { outline: 2px solid #e5e7eb; outline-offset: 2px; }
+    .tag-chip > input:disabled + span { opacity: .4; cursor: default; }
+    .tag-chip[hidden], .tag-choice-group[hidden], .tag-choice-items[hidden], .tag-choice-empty[hidden] { display: none; }
   </style>
 </head>
 <body>
@@ -770,6 +789,7 @@
       <div class="tag-filter-panel">
         <div class="tag-filter-heading"><strong>タグで絞り込み</strong><div class="tag-filter-actions"><button type="button" class="tag-filter-clear" id="clearTagFilter">解除</button><button type="button" class="tag-filter-clear" id="tagButton" aria-label="タグの管理" aria-haspopup="dialog" aria-controls="tagDialog">管理</button></div></div>
         <p class="tag-message">同じカテゴリ内は「いずれか」、カテゴリ間は「すべて」で絞り込みます。カテゴリのないタグも、それぞれ必須条件になります。</p>
+        <input class="control tag-choice-search" id="filterTagSearch" type="search" placeholder="タグ・カテゴリを検索" aria-label="絞り込み候補のタグを検索">
         <div id="tagFilterChoices"></div>
       </div>
     </details>
@@ -803,6 +823,7 @@
   <dialog id="videoTagDialog" class="tag-dialog" aria-labelledby="videoTagHeading">
     <div class="tag-dialog-heading"><h2 id="videoTagHeading">動画のタグ</h2><button class="button icon-button" id="closeVideoTagDialog" type="button" aria-label="動画のタグを閉じる">✕</button></div>
     <p class="tag-message" id="videoTagTitle"></p>
+    <input class="control tag-choice-search" id="videoTagSearch" type="search" placeholder="タグ・カテゴリを検索" aria-label="付けるタグの候補を検索">
     <div class="video-tag-choices" id="videoTagChoices"></div>
     <p class="tag-message" id="videoTagMessage" role="status"></p>
   </dialog>
@@ -938,6 +959,7 @@
       let folderView = null;
       let tagTypes = [];
       const selectedTagFilters = new Set();
+      const collapsedTagGroups = { filter: new Map(), video: new Map() };
       let videoTagAssignments = new Map();
       let videoTagsReady = false;
       let videoTagsWritable = true;
@@ -1115,6 +1137,7 @@
         $('#videoTagDialog').close();
         editingTagVideo = null;
         selectedTagFilters.clear();
+        $('#filterTagSearch').value = '';
         renderTagFilter();
         $('#tagFilter').open = false;
         viewEpoch += 1;
@@ -2343,11 +2366,46 @@
       }
 
       function groupedTagChoices(selected, kind) {
-        return groupedTags().map((group, groupIndex) => {
-          const choices = group.items.map(item => `<label class="video-tag-choice" title="${escapeHtml(item.name)}"><input type="checkbox" data-${kind}-tag="${item.index}" ${selected.has(item.name) ? 'checked' : ''} ${urlError ? 'disabled' : ''}><span>${escapeHtml(item.label)}</span></label>`).join('');
+        const html = groupedTags().map((group, groupIndex) => {
+          const choices = group.items.map(item => `<label class="tag-chip" data-chip-tag="${item.index}" title="${escapeHtml(item.name)}"><input type="checkbox" data-${kind}-tag="${item.index}" ${selected.has(item.name) ? 'checked' : ''} ${urlError ? 'disabled' : ''}><span>${escapeHtml(item.label)}</span></label>`).join('');
           if (!group.category) return choices;
-          return `<fieldset class="tag-category"><legend><label class="video-tag-choice"><input type="checkbox" data-${kind}-category="${groupIndex}" ${urlError ? 'disabled' : ''} aria-label="${escapeHtml(group.category)}のタグをすべて選択"><span>${escapeHtml(group.category)}</span></label></legend><div class="tag-category-items">${choices}</div></fieldset>`;
+          const open = !collapsedTagGroups[kind].get(group.category);
+          return `<section class="tag-choice-group" data-chip-group="${groupIndex}"><div class="tag-choice-heading"><input type="checkbox" data-${kind}-category="${groupIndex}" ${urlError ? 'disabled' : ''} title="検索で隠れた項目も含め、このカテゴリ全体を選択・解除" aria-label="${escapeHtml(group.category)}のタグをすべて選択"><button class="tag-choice-toggle" type="button" data-collapse-group="${groupIndex}" aria-expanded="${open}" aria-controls="${kind}-tag-group-${groupIndex}"><span class="tag-choice-name">${escapeHtml(group.category)}</span><span class="tag-choice-count" data-group-count="${groupIndex}"></span></button></div><div class="tag-choice-items" id="${kind}-tag-group-${groupIndex}" ${open ? '' : 'hidden'}>${choices}</div></section>`;
         }).join('');
+        return html + '<p class="tag-message tag-choice-empty" role="status" hidden>一致するタグがありません。</p>';
+      }
+
+      function applyTagChoiceSearch(container, kind) {
+        const term = $(`#${kind}TagSearch`).value.trim().toLocaleLowerCase('ja');
+        let visible = 0;
+        container.querySelectorAll('[data-chip-tag]').forEach(chip => {
+          const name = tagTypes[Number(chip.dataset.chipTag)] || '';
+          chip.hidden = !name.toLocaleLowerCase('ja').includes(term);
+          if (!chip.hidden) visible++;
+        });
+        const groups = groupedTags();
+        container.querySelectorAll('[data-chip-group]').forEach(section => {
+          const index = Number(section.dataset.chipGroup);
+          section.hidden = ![...section.querySelectorAll('[data-chip-tag]')].some(chip => !chip.hidden);
+          const open = Boolean(term) || !collapsedTagGroups[kind].get(groups[index].category);
+          section.querySelector('.tag-choice-items').hidden = !open;
+          section.querySelector('.tag-choice-toggle').setAttribute('aria-expanded', String(open));
+        });
+        const empty = container.querySelector('.tag-choice-empty');
+        if (empty) empty.hidden = visible > 0;
+      }
+
+      function setupTagChoiceBrowser(container, kind) {
+        $(`#${kind}TagSearch`).addEventListener('input', () => applyTagChoiceSearch(container, kind));
+        container.addEventListener('click', event => {
+          const button = event.target.closest('[data-collapse-group]');
+          if (!button) return;
+          const index = Number(button.dataset.collapseGroup);
+          const open = button.getAttribute('aria-expanded') !== 'true';
+          if (!$(`#${kind}TagSearch`).value.trim()) collapsedTagGroups[kind].set(groupedTags()[index].category, !open);
+          button.setAttribute('aria-expanded', String(open));
+          button.closest('[data-chip-group]').querySelector('.tag-choice-items').hidden = !open;
+        });
       }
 
       function syncGroupedTagChecks(container, kind, selected) {
@@ -2360,6 +2418,8 @@
           const count = group.items.filter(item => selected.has(item.name)).length;
           input.checked = count === group.items.length;
           input.indeterminate = count > 0 && count < group.items.length;
+          const countLabel = container.querySelector(`[data-group-count="${input.dataset[`${kind}Category`]}" ]`);
+          if (countLabel) countLabel.textContent = count ? `${count} / ${group.items.length} 選択` : `${group.items.length}件`;
         });
       }
 
@@ -2397,9 +2457,12 @@
         for (const tag of selectedTagFilters) if (!tagTypes.includes(tag)) selectedTagFilters.delete(tag);
         $('#tagFilterChoices').innerHTML = tagTypes.length ? groupedTagChoices(selectedTagFilters, 'filter') : '<p class="tag-message">「管理」からタグの種類を登録してください。</p>';
         syncGroupedTagChecks($('#tagFilterChoices'), 'filter', selectedTagFilters);
+        applyTagChoiceSearch($('#tagFilterChoices'), 'filter');
         updateTagFilterSummary();
       }
 
+      setupTagChoiceBrowser($('#tagFilterChoices'), 'filter');
+      setupTagChoiceBrowser($('#videoTagChoices'), 'video');
       $('#tagFilterChoices').addEventListener('change', event => {
         const input = event.target.closest('[data-filter-tag], [data-filter-category]');
         if (!input || urlError) return;
@@ -2490,6 +2553,7 @@
         if (!videoTagsReady || !video) return;
         stopPreview();
         editingTagVideo = video;
+        $('#videoTagSearch').value = '';
         $('#videoTagTitle').textContent = video.path;
         renderVideoTagChoices();
         $('#videoTagMessage').textContent = videoTagsWritable ? '変更は自動で保存されます。' : '一時保存です。タグの管理から割り当てを書き出してください。';
@@ -2501,6 +2565,7 @@
         const selected = new Set(activeVideoTags(editingTagVideo));
         $('#videoTagChoices').innerHTML = tagTypes.length ? groupedTagChoices(selected, 'video') : '<p class="tag-message">ヘッダーの「タグ」→「管理」から、先にタグの種類を登録してください。</p>';
         syncGroupedTagChecks($('#videoTagChoices'), 'video', selected);
+        applyTagChoiceSearch($('#videoTagChoices'), 'video');
       }
 
       function parseVideoTagsImport(value) {
@@ -2865,6 +2930,7 @@
   </script>
 </body>
 </html>
+
 
 
 
