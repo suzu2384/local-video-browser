@@ -127,10 +127,10 @@
       cursor: pointer;
     }
     .topbar { display: block; padding: 0; }
-    .topbar-row { overflow-x: auto; display: flex; align-items: center; gap: 8px; height: 72px; padding: 10px clamp(12px, 2vw, 28px); }
-    .topbar .source-menu { flex: 0 0 440px; min-width: 440px; }
+    .topbar-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 72px; padding: 10px clamp(12px, 2vw, 28px); }
+    .topbar .source-menu { flex: 0 1 440px; min-width: 260px; }
     .folder-summary { overflow: hidden; }
-    .topbar .toolbar { flex: 0 1 798px; width: auto; min-width: 738px; }
+
     .control { min-width: 0; }
     .topbar .button { white-space: nowrap; }
     @media (max-width: 1600px) {
@@ -138,13 +138,16 @@
       .topbar .button-label { display: none; }
       
     }
-    @media (max-width: 1600px) {
-      .topbar-row { overflow-x: auto; }
-      
-    }
-    .header-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: 0 0 auto; }
+    .header-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; flex: 1 1 980px; min-width: 0; }
     .header-actions > .button { flex-shrink: 0; }
-    .topbar .header-actions .toolbar { flex: 0 0 auto; width: clamp(738px, 48vw, 798px); }
+    .topbar .header-actions .toolbar { display: contents; }
+    .topbar .header-actions .toolbar[hidden] { display: none; }
+    #searchInput { flex: 1 1 220px; width: auto; min-width: 160px; max-width: 280px; }
+    #folderFilter { flex: 0 1 175px; width: 175px; min-width: 130px; }
+    .sort-controls { display: flex; flex: 0 1 197px; gap: 8px; min-width: 170px; }
+    .sort-controls #sortSelect { flex: 1; min-width: 0; width: 145px; }
+    .sort-controls #sortDirection { flex: 0 0 44px; }
+    #thumbnailSize { flex: 0 0 auto; }
     .header-toggle {
       position: absolute; top: 100%; right: 16px;
       width: 36px; min-height: 20px; height: 20px;
@@ -666,7 +669,6 @@
     .folder-summary .summary:empty { display: block; }
     .folder-summary #summary.summary-message { grid-column: 2 / -1; overflow: visible; text-overflow: clip; }
     .folder-summary #summary.summary-message ~ #durationStatus { display: none; }
-    .topbar-row { scrollbar-width: thin; }
     .folder-summary .folder-name { max-width: 100%; }
     .folder-summary .summary { padding-left: 0; border: 0; }
     .tag-dialog { width: min(420px, calc(100vw - 32px)); max-height: 80vh; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: #101621; color: var(--text); box-shadow: var(--shadow); }
@@ -704,6 +706,30 @@
     .tag-category-items { display: grid; gap: 8px; padding-left: 16px; }
     #tagList { display: grid; }
     #tagList .tag-category-items { display: flex; flex-wrap: wrap; padding-left: 0; }
+    @media (max-width: 1100px) {
+      .topbar .source-menu { flex: 1 1 440px; }
+      .header-actions { flex-basis: 100%; }
+      #searchInput { max-width: none; }
+    }
+    @media (max-width: 600px) {
+      .topbar-row { gap: 8px; padding: 8px 12px; }
+      .topbar .brand { font-size: 18px; }
+      .topbar .source-menu { flex: 1 1 180px; min-width: 0; }
+      .folder-summary { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2px 8px; font-size: 11px; }
+      .folder-summary #durationStatus { grid-column: 1 / -1; min-height: 18px; }
+      .folder-summary #summary.summary-message { grid-column: 1 / -1; white-space: normal; overflow-wrap: anywhere; }
+      .header-actions { gap: 6px; }
+      #searchInput { flex: 1 1 100%; width: 100%; min-width: 0; }
+      #folderFilter { flex: 1 1 120px; width: auto; min-width: 110px; }
+      .sort-controls { flex: 1 1 150px; min-width: 140px; gap: 6px; }
+      #thumbnailSize { gap: 3px; }
+      #thumbnailSize .size-button { width: 32px; }
+      .tag-filter { flex-basis: 80px; width: 80px; }
+      .tag-filter > summary { gap: 4px; padding-left: 6px; padding-right: 6px; }
+      .header-actions > .icon-button, #folderButton { width: 38px; padding-left: 0; padding-right: 0; }
+      .folder-summary .summary { font-size: 11px; }
+    }
+    .sources, .tag-filter-panel { max-height: min(420px, max(100px, calc(100dvh - var(--header-height, 72px) - 24px))); }
   </style>
 </head>
 <body>
@@ -723,6 +749,7 @@
     <div class="toolbar" id="toolbar" hidden>
       <input class="control" id="searchInput" type="search" placeholder="動画名を検索" aria-label="動画名を検索">
       <select class="control" id="folderFilter" aria-label="対象フォルダ"><option value="">すべてのフォルダ</option></select>
+      <div class="sort-controls">
       <select class="control" id="sortSelect" aria-label="並び順">
         <option value="recommended" selected>おすすめ順</option>
         <option value="name">名前</option>
@@ -735,6 +762,7 @@
           <path d="M13 6h3M13 12h5M13 18h8"/>
         </svg>
       </button>
+      </div>
       <div id="thumbnailSize" class="size-buttons" role="group" aria-label="サムネイルサイズ"><button class="button size-button" type="button" data-thumbnail-size="small" aria-label="サムネイル：小" aria-pressed="false" title="サムネイル：小"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.0" y="5" width="4.666666666666667" height="14" rx="1"/><rect x="8.666666666666668" y="5" width="4.666666666666667" height="14" rx="1"/><rect x="15.333333333333334" y="5" width="4.666666666666667" height="14" rx="1"/></svg></button><button class="button size-button" type="button" data-thumbnail-size="medium" aria-label="サムネイル：中" aria-pressed="false" title="サムネイル：中"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.0" y="5" width="8.0" height="14" rx="1"/><rect x="12.0" y="5" width="8.0" height="14" rx="1"/></svg></button><button class="button size-button" type="button" data-thumbnail-size="large" aria-label="サムネイル：大" aria-pressed="false" title="サムネイル：大"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.0" y="5" width="18.0" height="14" rx="1"/></svg></button></div>
     </div>
     <details class="tag-filter" id="tagFilter">
@@ -2391,7 +2419,10 @@
         if (event.key === 'Escape') { $('#tagFilter').open = false; $('#tagFilterSummary').focus(); event.stopPropagation(); }
       });
       document.addEventListener('click', event => {
-        if (!$('#tagFilter').contains(event.target)) $('#tagFilter').open = false;
+        for (const id of ['#tagFilter', '#sourceMenu']) {
+          const menu = $(id);
+          if (!menu.contains(event.target)) menu.open = false;
+        }
       });
 
       function refreshVideoTagLabels() {
@@ -2518,6 +2549,25 @@
         return { format: 'localflix-video-tags', version: 1, tagTypes: [...tagTypes], videos: [...paths].filter(([, item]) => item.tags.length).map(([path, item]) => ({ path, tags: item.tags })) };
       }
 
+      function closeDialogOnOutsideClick(dialog) {
+        let startedOutside = false;
+        const outside = event => {
+          const bounds = dialog.getBoundingClientRect();
+          return event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom;
+        };
+        dialog.addEventListener('pointerdown', event => {
+          startedOutside = event.isPrimary && event.button === 0 && event.target === dialog && outside(event);
+        });
+        dialog.addEventListener('pointercancel', () => { startedOutside = false; });
+        dialog.addEventListener('click', event => {
+          if (startedOutside && event.target === dialog && outside(event)) dialog.close();
+          startedOutside = false;
+        });
+        dialog.addEventListener('close', () => { startedOutside = false; });
+      }
+      closeDialogOnOutsideClick($('#videoTagDialog'));
+      closeDialogOnOutsideClick($('#tagDialog'));
+
       $('#closeVideoTagDialog').addEventListener('click', () => $('#videoTagDialog').close());
       $('#videoTagDialog').addEventListener('close', () => { editingTagVideo = null; });
       $('#videoTagChoices').addEventListener('change', async event => {
@@ -2533,7 +2583,10 @@
         refreshVideoTagLabels();
         $('#videoTagMessage').textContent = '保存中…';
         try { await saveVideoTags(new Map([[key, [...tags]]])); if (editingTagVideo === video) $('#videoTagMessage').textContent = '保存しました。'; }
-        catch (_) { if (editingTagVideo === video) $('#videoTagMessage').textContent = '保存できませんでした。変更はこの画面を開いている間のみ保持します。タグの管理から書き出してください。'; }
+        catch (_) {
+          const message = 'タグの保存に失敗しました。変更はこのページを開いている間のみ保持します。タグの管理から書き出してください。';
+          if (editingTagVideo === video) $('#videoTagMessage').textContent = message; else showNotice(message);
+        }
       });
       $('#exportVideoTags').addEventListener('click', () => {
         if (!videoTagsReady || folderBusy || urlError) { $('#tagTransferMessage').textContent = '一覧の読み込みが終わってからお試しください。'; return; }
@@ -2812,6 +2865,7 @@
   </script>
 </body>
 </html>
+
 
 
 
