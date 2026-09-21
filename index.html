@@ -694,6 +694,17 @@
     .video-tag-choice input { accent-color: #dbe1eb; }
     .tag-transfer { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
     #videoTagTitle { overflow-wrap: anywhere; }
+    .tag-filter { flex: 0 0 142px; width: 142px; }
+    .tag-filter > summary { list-style: none; display: flex; justify-content: space-between; gap: 6px; cursor: pointer; }
+    .tag-filter > summary::-webkit-details-marker { display: none; }
+    .tag-filter > summary::after { content: '▾'; }
+    .tag-filter.active > summary { border-color: #9aa5b5; background: #29313d; }
+    .tag-filter-panel { position: fixed; top: calc(var(--header-height, 72px) + 8px); right: 18px; width: min(320px, calc(100vw - 36px)); max-height: min(420px, 70vh); overflow: auto; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: #101621; box-shadow: var(--shadow); z-index: 30; }
+    .tag-filter-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .tag-filter-heading strong { font-size: 14px; }
+    .tag-filter-clear { background: transparent; border: 0; padding: 4px; color: var(--muted); cursor: pointer; font-size: 12px; }
+    .tag-filter-clear:disabled { opacity: .4; cursor: default; }
+    #tagFilterChoices { display: grid; gap: 10px; margin-top: 12px; }
   </style>
 </head>
 <body>
@@ -727,6 +738,14 @@
       </button>
       <div id="thumbnailSize" class="size-buttons" role="group" aria-label="サムネイルサイズ"><button class="button size-button" type="button" data-thumbnail-size="small" aria-label="サムネイル：小" aria-pressed="false" title="サムネイル：小"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.0" y="5" width="4.666666666666667" height="14" rx="1"/><rect x="8.666666666666668" y="5" width="4.666666666666667" height="14" rx="1"/><rect x="15.333333333333334" y="5" width="4.666666666666667" height="14" rx="1"/></svg></button><button class="button size-button" type="button" data-thumbnail-size="medium" aria-label="サムネイル：中" aria-pressed="false" title="サムネイル：中"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.0" y="5" width="8.0" height="14" rx="1"/><rect x="12.0" y="5" width="8.0" height="14" rx="1"/></svg></button><button class="button size-button" type="button" data-thumbnail-size="large" aria-label="サムネイル：大" aria-pressed="false" title="サムネイル：大"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.0" y="5" width="18.0" height="14" rx="1"/></svg></button></div>
     </div>
+    <details class="tag-filter" id="tagFilter">
+      <summary class="button" title="タグで絞り込み" aria-label="タグで絞り込み" id="tagFilterSummary"><span id="tagFilterLabel">すべてのタグ</span></summary>
+      <div class="tag-filter-panel">
+        <div class="tag-filter-heading"><strong>タグで絞り込み</strong><button type="button" class="tag-filter-clear" id="clearTagFilter">解除</button></div>
+        <p class="tag-message">選んだタグをすべて含む動画を表示します。</p>
+        <div id="tagFilterChoices"></div>
+      </div>
+    </details>
     <button class="button icon-button" id="tagButton" type="button" title="タグの管理" aria-label="タグの管理" aria-haspopup="dialog" aria-controls="tagDialog">
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M3 3h8l10 10-8 8L3 11Z"/><circle cx="7.5" cy="7.5" r="1"/></svg>
     </button>
@@ -893,6 +912,7 @@
       let directorySources = [];
       let folderView = null;
       let tagTypes = [];
+      const selectedTagFilters = new Set();
       let videoTagAssignments = new Map();
       let videoTagsReady = false;
       let videoTagsWritable = true;
@@ -1069,6 +1089,9 @@
       function resetFolderView() {
         $('#videoTagDialog').close();
         editingTagVideo = null;
+        selectedTagFilters.clear();
+        renderTagFilter();
+        $('#tagFilter').open = false;
         viewEpoch += 1;
         scanSequence += 1;
         durationSortGeneration += 1;
@@ -1459,7 +1482,7 @@
         if (elements.sort.value !== 'duration') return;
         const previous = displayedVideos;
         const sorted = sortVideos([...previous]);
-        const cards = [...elements.grid.children];
+        const cards = [...elements.grid.querySelectorAll('.card')];
         const cardByItem = new Map(cards.map((card) => [previous[Number(card.dataset.index)], card]));
         // Move existing cards to preserve loaded images and pending extraction tasks.
         if (sorted.some((item, index) => item !== previous[index])) stopPreview();
@@ -1552,12 +1575,7 @@
         for (const url of thumbUrls) URL.revokeObjectURL(url);
         thumbUrls.clear();
 
-        const term = elements.search.value.trim().toLocaleLowerCase('ja');
-        const sourceId = $('#folderFilter').value;
-        displayedVideos = sortVideos(allVideos.filter((video) =>
-          (!term || video.name.toLocaleLowerCase('ja').includes(term)) &&
-          (!sourceId || video.sourceId === sourceId)
-        ));
+        displayedVideos = sortVideos(allVideos.filter(matchesVideoFilters));
         elements.grid.innerHTML = displayedVideos.map((video, index) => {
           const folder = video.path.includes('/') ? video.path.slice(0, video.path.lastIndexOf('/')) : 'ルート';
           const selected = videoKey(video) === currentVideoKey;
@@ -1583,6 +1601,9 @@
         setLibrarySummary(allVideos.length
           ? `${displayedVideos.length} 本${displayedVideos.length !== allVideos.length ? ` / 全 ${allVideos.length} 本` : ''} ・ ${formatBytes(totalSize)}`
           : '動画ファイルが見つかりませんでした', !allVideos.length);
+        if (allVideos.length && !displayedVideos.length) {
+          elements.grid.innerHTML = '<p class="tag-message" role="status">条件に一致する動画がありません。タグ・検索語・フォルダの指定を見直してください。</p>';
+        }
 
         observer = new IntersectionObserver((entries) => {
           for (const entry of entries) {
@@ -2265,7 +2286,58 @@
         return (videoTagAssignments.get(videoTagKey(video)) || []).filter(tag => tagTypes.includes(tag));
       }
 
+      function matchesVideoFilters(video) {
+        const term = elements.search.value.trim().toLocaleLowerCase('ja');
+        const sourceId = $('#folderFilter').value;
+        if (term && !video.name.toLocaleLowerCase('ja').includes(term)) return false;
+        if (sourceId && video.sourceId !== sourceId) return false;
+        if (!selectedTagFilters.size) return true;
+        const tags = activeVideoTags(video);
+        return [...selectedTagFilters].every(tag => tags.includes(tag));
+      }
+
+      function updateTagFilterSummary() {
+        const count = selectedTagFilters.size;
+        $('#tagFilterLabel').textContent = count ? `タグ：${count}個を選択` : 'すべてのタグ';
+        $('#tagFilter').classList.toggle('active', count > 0);
+        $('#tagFilterSummary').title = count ? [...selectedTagFilters].join('・') : 'タグで絞り込み';
+        $('#tagFilterSummary').setAttribute('aria-label', count ? `タグで絞り込み：${count}個選択中` : 'タグで絞り込み：指定なし');
+        $('#clearTagFilter').disabled = !count;
+      }
+
+      function renderTagFilter() {
+        for (const tag of selectedTagFilters) if (!tagTypes.includes(tag)) selectedTagFilters.delete(tag);
+        $('#tagFilterChoices').innerHTML = tagTypes.length ? tagTypes.map((tag, index) => `<label class="video-tag-choice"><input type="checkbox" data-filter-tag="${index}" ${selectedTagFilters.has(tag) ? 'checked' : ''} ${urlError ? 'disabled' : ''}><span>${escapeHtml(tag)}</span></label>`).join('') : '<p class="tag-message">「タグの管理」からタグの種類を登録してください。</p>';
+        updateTagFilterSummary();
+      }
+
+      $('#tagFilterChoices').addEventListener('change', event => {
+        const input = event.target.closest('[data-filter-tag]');
+        if (!input || urlError) return;
+        const tag = tagTypes[Number(input.dataset.filterTag)];
+        if (!tag) return;
+        if (input.checked) selectedTagFilters.add(tag); else selectedTagFilters.delete(tag);
+        updateTagFilterSummary();
+        render();
+      });
+      $('#clearTagFilter').addEventListener('click', () => {
+        selectedTagFilters.clear();
+        renderTagFilter();
+        render();
+        $('#tagFilterSummary').focus();
+      });
+      $('#tagFilter').addEventListener('keydown', event => {
+        if (event.key === 'Escape') { $('#tagFilter').open = false; $('#tagFilterSummary').focus(); event.stopPropagation(); }
+      });
+      document.addEventListener('click', event => {
+        if (!$('#tagFilter').contains(event.target)) $('#tagFilter').open = false;
+      });
+
       function refreshVideoTagLabels() {
+        const visible = new Set(displayedVideos);
+        const matching = allVideos.filter(matchesVideoFilters);
+        if (matching.length !== displayedVideos.length || matching.some(video => !visible.has(video))) { render(); return; }
+
         elements.grid.querySelectorAll('.card').forEach(card => {
           const video = displayedVideos[Number(card.dataset.index)];
           if (!video) return;
@@ -2433,6 +2505,7 @@
       });
 
       function renderTagTypes() {
+        renderTagFilter();
         $('#tagButton').disabled = urlError;
         $('#tagForm').querySelectorAll('input, button').forEach(node => { node.disabled = urlError; });
         $('#tagButton').classList.toggle('has-tags', tagTypes.length > 0);
@@ -2516,7 +2589,7 @@
         const label = collapsed ? 'ヘッダーを展開する' : 'ヘッダーを折りたたむ';
         headerToggle.title = label;
         headerToggle.setAttribute('aria-label', label);
-        if (collapsed) $('#sourceMenu').open = false;
+        if (collapsed) { $('#sourceMenu').open = false; $('#tagFilter').open = false; }
         syncHeaderHeight();
       }
       headerToggle.addEventListener('click', () => {
@@ -2673,5 +2746,6 @@
   </script>
 </body>
 </html>
+
 
 
