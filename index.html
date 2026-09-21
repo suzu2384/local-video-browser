@@ -1177,17 +1177,8 @@
       function updateFolderFilter() {
         const filter = $('#folderFilter');
         const selected = filter.value;
-        const folders = new Map();
-        for (const source of directorySources) folders.set(JSON.stringify([source.id, '']), source.name);
-        for (const item of allVideos) {
-          const parts = (item.relativePath || item.name).split('/');
-          parts.pop();
-          const source = directorySources.find((source) => source.id === item.sourceId);
-          for (let i = 1; i <= parts.length; i += 1) {
-            const folder = parts.slice(0, i).join('/');
-            folders.set(JSON.stringify([item.sourceId, folder]), `${source?.name || ''}/${folder}`);
-          }
-        }
+        // Only registered collection roots are selectable; their descendants share sourceId.
+        const folders = new Map(directorySources.map((source) => [source.id, source.name]));
         filter.replaceChildren(new Option('すべてのフォルダ', ''));
         for (const [key, label] of [...folders].sort((a, b) => a[1].localeCompare(b[1], 'ja', { numeric: true }))) {
           filter.add(new Option(label, key));
@@ -1206,11 +1197,10 @@
         thumbUrls.clear();
 
         const term = elements.search.value.trim().toLocaleLowerCase('ja');
-        const selectedFolder = $('#folderFilter').value;
-        const [sourceId, folder] = selectedFolder ? JSON.parse(selectedFolder) : [null, ''];
+        const sourceId = $('#folderFilter').value;
         displayedVideos = sortVideos(allVideos.filter((video) =>
           (!term || video.name.toLocaleLowerCase('ja').includes(term)) &&
-          (!sourceId || (video.sourceId === sourceId && (!folder || video.relativePath?.startsWith(`${folder}/`))))
+          (!sourceId || video.sourceId === sourceId)
         ));
         elements.grid.innerHTML = displayedVideos.map((video, index) => {
           const folder = video.path.includes('/') ? video.path.slice(0, video.path.lastIndexOf('/')) : 'ルート';
