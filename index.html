@@ -171,8 +171,11 @@
     .summary:empty { display: none; }
     .grid {
       display: grid;
+      align-content: start;
+      align-items: start;
+      grid-auto-rows: max-content;
       grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-      gap: 22px 16px;
+      gap: 12px 16px;
       min-width: 0;
     }
     .content-layout.player-open {
@@ -224,7 +227,7 @@
       grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
       grid-template-rows: none;
       grid-auto-flow: row;
-      gap: 22px 16px;
+      gap: 12px 16px;
       overflow: visible;
       padding: 0;
     }
@@ -355,7 +358,7 @@
     .card:hover .play-badge, .card:focus-visible .play-badge { opacity: 1; transform: none; }
     .card-title {
       overflow: hidden;
-      margin: 11px 2px 4px;
+      margin: 6px 2px 2px;
       font-size: 15px;
       font-weight: 700;
       line-height: 1.35;
@@ -646,7 +649,7 @@
     }
     @media (max-width: 760px) {
       .topbar { gap: 10px; }
-      .grid { grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 18px 12px; }
+      .grid { grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 12px 12px; }
       .button-label { display: none; }
     }
     .grid, .content-layout.player-open .grid, .content-layout.theater-mode .grid {
@@ -676,9 +679,9 @@
     .tag-message { font-size: 13px; color: var(--muted); margin: 8px 0; overflow-wrap: anywhere; }
     .card .poster { display: block; width: 100%; padding: 0; cursor: pointer; color: inherit; }
     .card:focus-within .play-badge { opacity: 1; transform: none; }
-    .card-tags { display: flex; align-items: center; gap: 6px; padding: 2px 10px 6px; min-width: 0; }
+    .card-tags { display: flex; align-items: center; gap: 6px; padding: 0 2px 2px; min-width: 0; }
     .video-tags-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
-    .edit-video-tags { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 6px; background: transparent; padding: 4px 7px; font-size: 11px; cursor: pointer; }
+    .edit-video-tags { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 6px; background: transparent; padding: 2px 6px; font-size: 11px; line-height: 1.3; cursor: pointer; }
     .video-tag-choices { display: grid; gap: 8px; margin: 12px 0; }
     .video-tag-choice { display: flex; align-items: center; gap: 8px; overflow-wrap: anywhere; }
     .video-tag-choice input { accent-color: #dbe1eb; }
@@ -696,6 +699,11 @@
     .tag-filter-clear { background: transparent; border: 0; padding: 4px; color: var(--muted); cursor: pointer; font-size: 12px; }
     .tag-filter-clear:disabled { opacity: .4; cursor: default; }
     #tagFilterChoices { display: grid; gap: 10px; margin-top: 12px; }
+    .tag-category { min-width: 0; margin: 0; padding: 8px 10px 10px; border: 1px solid var(--line); border-radius: 8px; }
+    .tag-category legend { max-width: 100%; padding: 0 4px; font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
+    .tag-category-items { display: grid; gap: 8px; padding-left: 16px; }
+    #tagList { display: grid; }
+    #tagList .tag-category-items { display: flex; flex-wrap: wrap; padding-left: 0; }
   </style>
 </head>
 <body>
@@ -733,7 +741,7 @@
       <summary class="button" title="タグの絞り込みと管理" aria-label="タグの絞り込みと管理" id="tagFilterSummary"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M3 3h8l10 10-8 8L3 11Z"/><circle cx="7.5" cy="7.5" r="1"/></svg><span id="tagFilterLabel">タグ</span></summary>
       <div class="tag-filter-panel">
         <div class="tag-filter-heading"><strong>タグで絞り込み</strong><div class="tag-filter-actions"><button type="button" class="tag-filter-clear" id="clearTagFilter">解除</button><button type="button" class="tag-filter-clear" id="tagButton" aria-label="タグの管理" aria-haspopup="dialog" aria-controls="tagDialog">管理</button></div></div>
-        <p class="tag-message">選んだタグをすべて含む動画を表示します。</p>
+        <p class="tag-message">選んだタグをすべて含む動画を表示します。カテゴリのチェックは配下のタグを一括選択します。</p>
         <div id="tagFilterChoices"></div>
       </div>
     </details>
@@ -754,8 +762,9 @@
     <div class="tag-dialog-heading"><h2 id="tagDialogTitle">タグの管理</h2><button class="button icon-button" id="closeTagDialog" type="button" aria-label="タグの管理を閉じる">✕</button></div>
     <form id="tagForm">
       <label for="tagName">タグ名</label>
-      <div class="tag-form"><input class="control" id="tagName" maxlength="40" required autocomplete="off" placeholder="例：お気に入り" aria-describedby="tagMessage"><button class="button" type="submit">追加</button></div>
+      <div class="tag-form"><input class="control" id="tagName" maxlength="40" required autocomplete="off" placeholder="例：実況：モンハン" aria-describedby="tagMessage"><button class="button" type="submit">追加</button></div>
     </form>
+    <p class="tag-message">「実況：モンハン」のように「カテゴリ：項目」で登録すると、カテゴリごとにまとめて表示します。</p>
     <p class="tag-message" id="tagMessage" role="status"></p>
     <div class="tag-list" id="tagList"></div>
     <div class="tag-transfer"><button class="button" id="exportVideoTags" type="button">割り当てを書き出す</button><button class="button" id="importVideoTags" type="button">割り当てを読み込む</button></div>
@@ -2272,6 +2281,48 @@
         return (videoTagAssignments.get(videoTagKey(video)) || []).filter(tag => tagTypes.includes(tag));
       }
 
+      function groupedTags() {
+        const groups = [], categories = new Map();
+        tagTypes.forEach((name, index) => {
+          const separator = name.search(/[:：]/);
+          const category = separator > 0 ? name.slice(0, separator).trim() : '';
+          const label = separator > 0 ? name.slice(separator + 1).trim() : '';
+          const item = { name, index, label: category && label ? label : name };
+          if (!category || !label) { groups.push({ category: null, items: [item] }); return; }
+          if (!categories.has(category)) { const group = { category, items: [] }; categories.set(category, group); groups.push(group); }
+          categories.get(category).items.push(item);
+        });
+        return groups;
+      }
+
+      function groupedTagChoices(selected, kind) {
+        return groupedTags().map((group, groupIndex) => {
+          const choices = group.items.map(item => `<label class="video-tag-choice" title="${escapeHtml(item.name)}"><input type="checkbox" data-${kind}-tag="${item.index}" ${selected.has(item.name) ? 'checked' : ''} ${urlError ? 'disabled' : ''}><span>${escapeHtml(item.label)}</span></label>`).join('');
+          if (!group.category) return choices;
+          return `<fieldset class="tag-category"><legend><label class="video-tag-choice"><input type="checkbox" data-${kind}-category="${groupIndex}" ${urlError ? 'disabled' : ''} aria-label="${escapeHtml(group.category)}のタグをすべて選択"><span>${escapeHtml(group.category)}</span></label></legend><div class="tag-category-items">${choices}</div></fieldset>`;
+        }).join('');
+      }
+
+      function syncGroupedTagChecks(container, kind, selected) {
+        const groups = groupedTags();
+        container.querySelectorAll(`[data-${kind}-tag]`).forEach(input => {
+          input.checked = selected.has(tagTypes[Number(input.dataset[`${kind}Tag`])]);
+        });
+        container.querySelectorAll(`[data-${kind}-category]`).forEach(input => {
+          const group = groups[Number(input.dataset[`${kind}Category`])];
+          const count = group.items.filter(item => selected.has(item.name)).length;
+          input.checked = count === group.items.length;
+          input.indeterminate = count > 0 && count < group.items.length;
+        });
+      }
+
+      function tagsForCheckbox(input, kind) {
+        const categoryIndex = input.dataset[`${kind}Category`];
+        if (categoryIndex !== undefined) return groupedTags()[Number(categoryIndex)]?.items.map(item => item.name) || [];
+        const tag = tagTypes[Number(input.dataset[`${kind}Tag`])];
+        return tag ? [tag] : [];
+      }
+
       function matchesVideoFilters(video) {
         const term = elements.search.value.trim().toLocaleLowerCase('ja');
         const sourceId = $('#folderFilter').value;
@@ -2293,16 +2344,17 @@
 
       function renderTagFilter() {
         for (const tag of selectedTagFilters) if (!tagTypes.includes(tag)) selectedTagFilters.delete(tag);
-        $('#tagFilterChoices').innerHTML = tagTypes.length ? tagTypes.map((tag, index) => `<label class="video-tag-choice"><input type="checkbox" data-filter-tag="${index}" ${selectedTagFilters.has(tag) ? 'checked' : ''} ${urlError ? 'disabled' : ''}><span>${escapeHtml(tag)}</span></label>`).join('') : '<p class="tag-message">「タグの管理」からタグの種類を登録してください。</p>';
+        $('#tagFilterChoices').innerHTML = tagTypes.length ? groupedTagChoices(selectedTagFilters, 'filter') : '<p class="tag-message">「管理」からタグの種類を登録してください。</p>';
+        syncGroupedTagChecks($('#tagFilterChoices'), 'filter', selectedTagFilters);
         updateTagFilterSummary();
       }
 
       $('#tagFilterChoices').addEventListener('change', event => {
-        const input = event.target.closest('[data-filter-tag]');
+        const input = event.target.closest('[data-filter-tag], [data-filter-category]');
         if (!input || urlError) return;
-        const tag = tagTypes[Number(input.dataset.filterTag)];
-        if (!tag) return;
-        if (input.checked) selectedTagFilters.add(tag); else selectedTagFilters.delete(tag);
+        const tags = tagsForCheckbox(input, 'filter');
+        for (const tag of tags) { if (input.checked) selectedTagFilters.add(tag); else selectedTagFilters.delete(tag); }
+        syncGroupedTagChecks($('#tagFilterChoices'), 'filter', selectedTagFilters);
         updateTagFilterSummary();
         render();
       });
@@ -2392,8 +2444,9 @@
 
       function renderVideoTagChoices() {
         if (!editingTagVideo) return;
-        const selected = activeVideoTags(editingTagVideo);
-        $('#videoTagChoices').innerHTML = tagTypes.length ? tagTypes.map((tag, index) => `<label class="video-tag-choice"><input type="checkbox" data-video-tag="${index}" ${selected.includes(tag) ? 'checked' : ''}><span>${escapeHtml(tag)}</span></label>`).join('') : '<p class="tag-message">ヘッダーの「タグ」→「管理」から、先にタグの種類を登録してください。</p>';
+        const selected = new Set(activeVideoTags(editingTagVideo));
+        $('#videoTagChoices').innerHTML = tagTypes.length ? groupedTagChoices(selected, 'video') : '<p class="tag-message">ヘッダーの「タグ」→「管理」から、先にタグの種類を登録してください。</p>';
+        syncGroupedTagChecks($('#videoTagChoices'), 'video', selected);
       }
 
       function parseVideoTagsImport(value) {
@@ -2445,14 +2498,15 @@
       $('#closeVideoTagDialog').addEventListener('click', () => $('#videoTagDialog').close());
       $('#videoTagDialog').addEventListener('close', () => { editingTagVideo = null; });
       $('#videoTagChoices').addEventListener('change', async event => {
-        const input = event.target.closest('[data-video-tag]');
+        const input = event.target.closest('[data-video-tag], [data-video-category]');
         if (!input || !editingTagVideo || urlError) return;
-        const video = editingTagVideo, key = videoTagKey(video), tag = tagTypes[Number(input.dataset.videoTag)];
-        if (!tag) return;
+        const video = editingTagVideo, key = videoTagKey(video), changed = tagsForCheckbox(input, 'video');
+        if (!changed.length) return;
         const tags = new Set(videoTagAssignments.get(key) || []);
-        if (input.checked) tags.add(tag); else tags.delete(tag);
-        if (tags.size > 100) { input.checked = false; $('#videoTagMessage').textContent = '1本の動画に保存できるタグは100個までです。'; return; }
+        for (const tag of changed) { if (input.checked) tags.add(tag); else tags.delete(tag); }
+        if (tags.size > 100) { syncGroupedTagChecks($('#videoTagChoices'), 'video', new Set(activeVideoTags(video))); $('#videoTagMessage').textContent = '1本の動画に保存できるタグは100個までです。'; return; }
         if (tags.size) videoTagAssignments.set(key, [...tags].sort()); else videoTagAssignments.delete(key);
+        syncGroupedTagChecks($('#videoTagChoices'), 'video', tags);
         refreshVideoTagLabels();
         $('#videoTagMessage').textContent = '保存中…';
         try { await saveVideoTags(new Map([[key, [...tags]]])); if (editingTagVideo === video) $('#videoTagMessage').textContent = '保存しました。'; }
@@ -2495,8 +2549,10 @@
         $('#tagButton').disabled = urlError;
         $('#tagForm').querySelectorAll('input, button').forEach(node => { node.disabled = urlError; });
         $('#tagButton').title = `タグの管理（${tagTypes.length}個）`;
-        $('#tagList').innerHTML = tagTypes.length ? tagTypes.map((name, index) => `
-          <span class="source-chip"><span>${escapeHtml(name)}</span><button class="remove-source" type="button" data-remove-tag="${index}" aria-label="${escapeHtml(name)}を削除">✕</button></span>`).join('') : '<p class="tag-message">タグはまだ登録されていません。</p>';
+        $('#tagList').innerHTML = tagTypes.length ? groupedTags().map(group => {
+          const items = group.items.map(item => `<span class="source-chip" title="${escapeHtml(item.name)}"><span>${escapeHtml(item.label)}</span><button class="remove-source" type="button" data-remove-tag="${item.index}" aria-label="${escapeHtml(item.name)}を削除">✕</button></span>`).join('');
+          return group.category ? `<fieldset class="tag-category"><legend>${escapeHtml(group.category)}</legend><div class="tag-category-items">${items}</div></fieldset>` : items;
+        }).join('') : '<p class="tag-message">タグはまだ登録されていません。</p>';
         $('#tagMessage').textContent = '';
         refreshVideoTagLabels();
         if (editingTagVideo) renderVideoTagChoices();
@@ -2733,6 +2789,7 @@
   </script>
 </body>
 </html>
+
 
 
 
