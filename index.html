@@ -387,9 +387,9 @@
     }
     .notice.show { display: block; }
     .sources {
-      position: absolute;
-      top: calc(100% + 18px);
-      left: 0;
+      position: fixed;
+      top: calc(var(--header-height, 72px) + 8px);
+      left: clamp(18px, 4vw, 56px);
       z-index: 20;
       display: flex;
       flex-wrap: wrap;
@@ -405,6 +405,13 @@
       box-shadow: var(--shadow);
     }
     .sources:empty { display: none; }
+    .source-setup { flex: 0 0 100%; font-size: 13px; line-height: 1.6; }
+    .source-setup p { margin: 0 0 8px; overflow-wrap: anywhere; }
+    .source-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .source-actions a { color: var(--text); text-decoration: none; }
+    .source-chip { max-width: 100%; }
+    .source-chip > span { min-width: 0; overflow-wrap: anywhere; }
+    .notice { max-height: 40vh; overflow: auto; white-space: pre-line; }
     .source-chip {
       display: inline-flex;
       align-items: center;
@@ -746,6 +753,42 @@
 
   </main>
 
+  <script id="folder-url-codec">
+    const FolderUrlCodec = (() => {
+      function normalize(paths) {
+        if (!Array.isArray(paths) || paths.length > 256) throw new Error('対象フォルダの形式が不正です。');
+        const normalized = paths.map(path => {
+          if (typeof path !== 'string' || path.length > 4096 || /[\x00-\x1f\x7f:]/.test(path)) throw new Error('相対パスが不正です。');
+          path = path.replace(/\\/g, '/');
+          if (path.startsWith('/')) throw new Error('絶対パスは指定できません。');
+          const parts = path.split('/');
+          if (parts.includes('..')) throw new Error('基準フォルダの外は指定できません。');
+          return parts.filter(part => part && part !== '.').join('/') || '.';
+        });
+        return [...new Set(normalized)].sort();
+      }
+      function encode(paths) {
+        const bytes = new TextEncoder().encode(JSON.stringify({ v: 1, folders: normalize(paths) }));
+        const token = btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join('')).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        if (token.length > 65536) throw new Error('対象フォルダが多すぎます。一覧を分けてください。');
+        return token;
+      }
+      function decode(token) {
+        if (typeof token !== 'string' || token.length > 65536 || !/^[A-Za-z0-9_-]+$/.test(token) || token.length % 4 === 1) throw new Error('URLのフォルダ情報を読み取れません。');
+        const binary = atob(token.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - token.length % 4) % 4));
+        const value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(binary, char => char.charCodeAt(0))));
+        if (!value || value.v !== 1 || Object.keys(value).some(key => !['v', 'folders'].includes(key))) throw new Error('このURLの形式には対応していません。');
+        return normalize(value.folders);
+      }
+      async function resolve(root, path) {
+        const normalized = normalize([path])[0];
+        let handle = root;
+        if (normalized !== '.') for (const name of normalized.split('/')) handle = await handle.getDirectoryHandle(name);
+        return handle;
+      }
+      return { normalize, encode, decode, resolve };
+    })();
+  </script>
   <script>
     (() => {
       'use strict';
@@ -781,6 +824,14 @@
       };
 
       let directorySources = [];
+      let folderView = null;
+      let viewRoot = null;
+      let viewEpoch = 0;
+      let scanSequence = 0;
+      let appliedHash = null;
+      let urlError = false;
+      let folderBusy = false;
+      let viewStorageWarning = '';
       let allVideos = [];
       let displayedVideos = [];
       let playerUrl = null;
@@ -858,8 +909,10 @@
       }
 
       function setBusy(busy, message = '') {
-        elements.folderButton.disabled = busy;
-        elements.rescanButton.disabled = busy || !directorySources.length;
+        folderBusy = busy;
+        elements.folderButton.disabled = busy || urlError;
+        elements.rescanButton.disabled = busy || urlError || (!folderView && !directorySources.length);
+        elements.sources.querySelectorAll('button').forEach(button => { button.disabled = busy; });
         elements.folderButton.classList.toggle('loading', busy);
         elements.folderButton.setAttribute('aria-busy', String(busy));
         if (message) setLibrarySummary(message, true);
@@ -898,7 +951,7 @@
         });
       }
 
-      async function chooseFolder() {
+      async function chooseLegacyFolder() {
         showNotice();
         if ('showDirectoryPicker' in window) {
           try {
@@ -929,7 +982,186 @@
         elements.fallback.click();
       }
 
+      function viewPathsText() {
+        return folderView?.folders.length ? folderView.folders.map(path => `・${path}`).join('\n') : '（対象フォルダはまだありません）';
+      }
+
+      function showViewHint(message) {
+        setHeaderCollapsed(false);
+        $('#sourceMenu').open = true;
+        showNotice(`${message}\n対象（基準フォルダからの相対パス）：\n${viewPathsText()}`);
+      }
+
+      function resetFolderView() {
+        viewEpoch += 1;
+        scanSequence += 1;
+        durationSortGeneration += 1;
+        miniSceneRenderId += 1;
+        miniSceneQueue = [];
+        clearTimeout(durationOrderTimer);
+        durationOrderTimer = null;
+        stopPreview();
+        if (currentVideoKey) closePlayer();
+        observer?.disconnect();
+        miniSceneObserver?.disconnect();
+        for (const url of thumbUrls) URL.revokeObjectURL(url);
+        thumbUrls.clear();
+        directorySources = [];
+        allVideos = [];
+        displayedVideos = [];
+        elements.grid.innerHTML = '';
+        elements.search.value = '';
+        $('#folderFilter').replaceChildren(new Option('すべてのフォルダ', ''));
+        $('#durationStatus').textContent = '';
+        setLibrarySummary('');
+        elements.toolbar.hidden = true;
+        setBusy(false);
+        showNotice();
+      }
+
+      function writeFolderHash(token, replace = false) {
+        const url = new URL(location.href);
+        url.hash = `folders=${token}`;
+        appliedHash = url.hash;
+        try { history[replace ? 'replaceState' : 'pushState'](null, '', url.href); }
+        catch (_) { if (replace) location.replace(url.href); else location.hash = url.hash; }
+      }
+
+      async function rememberViewRoot(token, root) {
+        if (!root) return '';
+        try { await dbPut('settings', `folderView:${token}`, root); return ''; }
+        catch (_) { return 'この環境では基準フォルダを記憶できません。次回は選び直してください。'; }
+      }
+
+      async function activateTargets(paths, root) {
+        const folders = FolderUrlCodec.normalize(paths);
+        const token = FolderUrlCodec.encode(folders);
+        resetFolderView();
+        const epoch = viewEpoch;
+        folderView = { folders, token };
+        viewRoot = root;
+        urlError = false;
+        viewStorageWarning = '';
+        writeFolderHash(token);
+        updateSourceDisplay();
+        setBusy(true);
+        const warning = await rememberViewRoot(token, root);
+        if (epoch !== viewEpoch) return;
+        viewStorageWarning = warning;
+        await scanSources(false);
+      }
+
+      async function chooseBaseFolder() {
+        if (folderBusy) return;
+        if (!('showDirectoryPicker' in window)) {
+          showNotice('URLの一覧を復元するには、フォルダ参照に対応したPC版Chrome / Edgeで開いてください。');
+          return;
+        }
+        const epoch = viewEpoch;
+        try {
+          const handle = await window.showDirectoryPicker({ mode: 'read', startIn: viewRoot?.handle || 'videos' });
+          if (epoch !== viewEpoch) return;
+          let paths = folderView ? folderView.folders : [];
+          if (!folderView && directorySources.length) {
+            paths = [];
+            for (const source of directorySources) {
+              const parts = source.handle ? await handle.resolve(source.handle) : null;
+              if (epoch !== viewEpoch) return;
+              if (parts === null) {
+                showNotice('既存の全対象フォルダを含む親フォルダを選んでください。別の場所のフォルダは、別一覧に分けてください。現在の登録は変更していません。');
+                return;
+              }
+              paths.push(parts.join('/') || '.');
+            }
+          }
+          let cacheId = crypto.randomUUID();
+          if (viewRoot && await handle.isSameEntry(viewRoot.handle)) cacheId = viewRoot.cacheId;
+          if (epoch !== viewEpoch) return;
+          await activateTargets(paths, { handle, name: handle.name, cacheId });
+        } catch (error) {
+          if (epoch === viewEpoch && error?.name !== 'AbortError') showNotice('基準フォルダを選択できませんでした。フォルダへのアクセスを確認して、もう一度お試しください。');
+        }
+      }
+
+      async function chooseFolder() {
+        if (folderBusy || urlError) return;
+        if (!('showDirectoryPicker' in window) && !folderView) return chooseLegacyFolder();
+        if (!folderView || !viewRoot) return chooseBaseFolder();
+        const epoch = viewEpoch;
+        const root = viewRoot;
+        try {
+          const handle = await window.showDirectoryPicker({ mode: 'read', startIn: root.handle });
+          if (epoch !== viewEpoch) return;
+          const parts = await root.handle.resolve(handle);
+          if (epoch !== viewEpoch) return;
+          if (parts === null) { showViewHint('選択したフォルダは基準フォルダの外です。基準フォルダ内を選んでください。'); return; }
+          const path = parts.join('/') || '.';
+          if (folderView.folders.includes(path)) { showNotice(`「${path}」はすでに対象に含まれています。`); return; }
+          await activateTargets([...folderView.folders, path], root);
+        } catch (error) {
+          if (epoch === viewEpoch && error?.name !== 'AbortError') showViewHint('対象フォルダを追加できませんでした。「アクセスを許可・更新」か「基準フォルダを選択」で確認してください。');
+        }
+      }
+
+      async function scanUrlSources(requestPermissions) {
+        durationSortGeneration += 1;
+        clearTimeout(durationOrderTimer);
+        durationOrderTimer = null;
+        $('#durationStatus').textContent = '';
+        durationFailures.clear();
+        const epoch = viewEpoch;
+        const scan = ++scanSequence;
+        const view = folderView;
+        const root = viewRoot;
+        const current = () => epoch === viewEpoch && scan === scanSequence;
+        setBusy(true, '動画を検索しています…');
+        const sources = view.folders.map(path => ({
+          id: `${root?.cacheId || 'unbound'}:${path}`, name: path, relativeRoot: path,
+          kind: 'handle', handle: null, pending: true, scanEpoch: epoch
+        }));
+        directorySources = sources;
+        const missing = [];
+        let permission = 'prompt';
+        try {
+          if (root) permission = requestPermissions
+            ? await root.handle.requestPermission({ mode: 'read' })
+            : await root.handle.queryPermission({ mode: 'read' });
+          if (!current()) return;
+          if (permission === 'granted') {
+            for (const source of sources) {
+              try {
+                source.handle = await FolderUrlCodec.resolve(root.handle, source.relativeRoot);
+                source.pending = false;
+              } catch (error) {
+                source.pending = error?.name !== 'NotFoundError' && error?.name !== 'TypeMismatchError';
+                missing.push(source.name);
+              }
+              if (!current()) return;
+            }
+          }
+          const videos = [];
+          if (permission === 'granted') for (const source of sources) {
+            if (!source.handle) continue;
+            try { videos.push(...await walkDirectory(source.handle, source)); }
+            catch (_) { source.pending = true; missing.push(source.name); }
+            if (!current()) return;
+          }
+          if (!current()) return;
+          allVideos = videos;
+          updateSourceDisplay();
+          finishScan();
+          if (!root) showViewHint('この一覧の基準フォルダを選択してください。下記の相対パスが入っているフォルダです。');
+          else if (permission !== 'granted') showViewHint(`基準フォルダ「${root.name}」へのアクセス許可が必要です。「アクセスを許可・更新」を押してください。`);
+          else if (missing.length) showViewHint(`基準フォルダ「${root.name}」内で次の対象を読み込めませんでした：${missing.join('、')}。フォルダ構成を確認するか、基準フォルダを選び直してください。`);
+          else if (!view.folders.length) showViewHint(`基準フォルダ「${root.name}」を設定しました。「フォルダを追加」で、その中の収集対象を選んでください。基準フォルダ自体も選べます。`);
+          else showNotice(viewStorageWarning);
+        } catch (_) {
+          if (current()) { allVideos = []; updateSourceDisplay(); finishScan(); showViewHint('基準フォルダを読み込めませんでした。選び直してください。'); }
+        } finally { if (current()) setBusy(false); }
+      }
+
       async function persistHandles() {
+        if (folderView || urlError) return;
         const handles = directorySources
           .filter((source) => source.kind === 'handle')
           .map((source) => ({ id: source.id, name: source.name, handle: source.handle }));
@@ -939,6 +1171,7 @@
       async function walkDirectory(handle, source, prefix = '') {
         const videos = [];
         for await (const entry of handle.values()) {
+          if (source.scanEpoch !== undefined && source.scanEpoch !== viewEpoch) throw new Error('view changed');
           if (entry.kind === 'directory') {
             videos.push(...await walkDirectory(entry, source, `${prefix}${entry.name}/`));
           } else if (entry.kind === 'file' && isVideo(entry.name)) {
@@ -959,6 +1192,13 @@
       }
 
       async function scanSources(requestPermissions = false) {
+        if (urlError) return;
+        if (folderView) {
+          if (requestPermissions && !viewRoot) return chooseBaseFolder();
+          return scanUrlSources(requestPermissions);
+        }
+        const epoch = viewEpoch;
+        const scan = ++scanSequence;
         durationSortGeneration += 1;
         $('#durationStatus').textContent = '';
         durationFailures.clear();
@@ -982,6 +1222,7 @@
               if (permission !== 'granted' && requestPermissions) {
                 permission = await source.handle.requestPermission({ mode: 'read' });
               }
+              if (epoch !== viewEpoch || scan !== scanSequence) return [];
               source.pending = permission !== 'granted';
               if (source.pending) {
                 setHeaderCollapsed(false);
@@ -990,13 +1231,16 @@
               }
               return await walkDirectory(source.handle, source);
             } catch (_) {
+              if (epoch !== viewEpoch || scan !== scanSequence) return [];
               source.pending = true;
               setHeaderCollapsed(false);
               unavailable.push(source.name);
               return [];
             }
           });
-          allVideos = (await Promise.all(scans)).flat();
+          const videos = (await Promise.all(scans)).flat();
+          if (epoch !== viewEpoch || scan !== scanSequence) return;
+          allVideos = videos;
           updateSourceDisplay();
           finishScan();
           const hasTemporarySource = directorySources.some((source) => source.kind === 'fallback');
@@ -1006,11 +1250,12 @@
               ? 'このブラウザでは追加したフォルダを記憶できないため、次回起動時はもう一度選択してください。'
               : '');
         } finally {
-          setBusy(false);
+          if (epoch === viewEpoch && scan === scanSequence) setBusy(false);
         }
       }
 
       function scanFallbackFiles(fileList) {
+        if (folderView || urlError) return;
         const files = [...fileList];
         const firstPath = files[0]?.webkitRelativePath || '';
         const name = firstPath.split('/')[0] || '選択した動画';
@@ -1028,18 +1273,34 @@
       }
 
       function updateSourceDisplay() {
-        const count = directorySources.length;
+        const count = folderView ? folderView.folders.length : directorySources.length;
         elements.folderName.textContent = count === 0
-          ? '動画フォルダ未選択'
-          : count === 1 ? directorySources[0].name : `${count}個のフォルダを対象`;
-        elements.sources.innerHTML = directorySources.map((source) => `
-          <span class="source-chip${source.pending ? ' pending' : ''}" title="${source.pending ? 'アクセス許可が必要です' : '検索対象'}">
-            📁 ${escapeHtml(source.name)}${source.pending ? ' ⚠' : ''}
-            <button class="remove-source" type="button" data-remove-source="${source.id}" aria-label="${escapeHtml(source.name)}を解除">✕</button>
+          ? (folderView ? '対象フォルダ未選択' : '動画フォルダ未選択')
+          : count === 1 ? (folderView ? folderView.folders[0] : directorySources[0].name) : `${count}個のフォルダを対象`;
+        elements.folderName.title = folderView ? viewPathsText() : directorySources.map(source => source.name).join('、');
+        const emptyUrl = `#folders=${FolderUrlCodec.encode([])}`;
+        const setup = `<div class="source-setup">
+          <p>${folderView ? `基準フォルダ：${escapeHtml(viewRoot?.name || '未選択')}<br>対象は下記の相対パスです。「.」は基準フォルダ全体です。` : '対象をURLに保存するには、登録フォルダを含む基準フォルダを選択してください。'}</p>
+          <div class="source-actions">
+            <button class="button" type="button" data-view-action="base">${viewRoot ? '基準フォルダを変更' : '基準フォルダを選択'}</button>
+            ${folderView && viewRoot ? '<button class="button" type="button" data-view-action="rescan">アクセスを許可・更新</button>' : ''}
+            <a class="button" href="${emptyUrl}" target="_blank" rel="noopener">別の一覧を開く</a>
+          </div></div>`;
+        elements.sources.innerHTML = setup + directorySources.map((source) => `
+          <span class="source-chip${source.pending ? ' pending' : ''}" title="${source.pending ? 'アクセス許可・基準フォルダの確認が必要です' : '検索対象'}">
+            <span>📁 ${escapeHtml(source.name)}${source.pending ? ' ⚠' : ''}</span>
+            <button class="remove-source" type="button" data-remove-source="${escapeHtml(source.id)}" aria-label="${escapeHtml(source.name)}を解除">✕</button>
           </span>`).join('');
+        elements.sources.querySelectorAll('button').forEach(button => { button.disabled = folderBusy; });
       }
 
       async function removeSource(id) {
+        if (folderBusy) return;
+        if (folderView) {
+          const source = directorySources.find(source => source.id === id);
+          if (source) await activateTargets(folderView.folders.filter(path => path !== source.relativeRoot), viewRoot);
+          return;
+        }
         directorySources = directorySources.filter((source) => source.id !== id);
         await persistHandles();
         await scanSources(false);
@@ -1048,7 +1309,7 @@
       function finishScan() {
         updateFolderFilter();
         elements.toolbar.hidden = false;
-        elements.rescanButton.disabled = !directorySources.length;
+        elements.rescanButton.disabled = !folderView && !directorySources.length;
         updateSort();
         preloadDurations();
       }
@@ -1818,7 +2079,7 @@
         previewUrl = null;
       }
 
-      async function restoreFolders() {
+      async function restoreLegacyFolders(epoch) {
         if (!('showDirectoryPicker' in window)) return;
         try {
           let saved = await dbGet('settings', 'directoryHandles');
@@ -1826,6 +2087,7 @@
             const oldHandle = await dbGet('settings', 'directoryHandle');
             saved = oldHandle ? [{ handle: oldHandle, name: oldHandle.name }] : [];
           }
+          if (epoch !== viewEpoch) return;
           directorySources = saved
             .map((item, index) => item?.handle
               ? {
@@ -1848,8 +2110,49 @@
           if (!directorySources.length) return;
           updateSourceDisplay();
           await persistHandles();
-          await scanSources(false);
+          if (epoch === viewEpoch) await scanSources(false);
         } catch (_) {}
+      }
+
+      async function restoreFolders() {
+        if (appliedHash === location.hash) return;
+        appliedHash = location.hash;
+        resetFolderView();
+        const epoch = viewEpoch;
+        folderView = null;
+        viewRoot = null;
+        viewStorageWarning = '';
+        urlError = false;
+        if (!location.hash) {
+          updateSourceDisplay();
+          setBusy(true);
+          await restoreLegacyFolders(epoch);
+          if (epoch === viewEpoch) { updateSourceDisplay(); setBusy(false); }
+          return;
+        }
+        try {
+          const params = new URLSearchParams(location.hash.slice(1));
+          if (params.getAll('folders').length !== 1 || [...params.keys()].some(key => key !== 'folders')) throw new Error('URLの形式が不正です。');
+          const folders = FolderUrlCodec.decode(params.get('folders'));
+          folderView = { folders, token: FolderUrlCodec.encode(folders) };
+          writeFolderHash(folderView.token, true);
+        } catch (_) {
+          urlError = true;
+          updateSourceDisplay();
+          setBusy(false);
+          setHeaderCollapsed(false);
+          showNotice('URLのフォルダ情報が壊れているか、未対応の形式です。元のURLを確認するか、#以降を削除して開き直してください。');
+          return;
+        }
+        updateSourceDisplay();
+        setBusy(true);
+        let saved;
+        try { saved = await dbGet('settings', `folderView:${folderView.token}`); } catch (_) {}
+        if (epoch !== viewEpoch) return;
+        if (saved?.handle?.kind === 'directory' && typeof saved.handle.queryPermission === 'function') {
+          viewRoot = { handle: saved.handle, name: saved.name || saved.handle.name, cacheId: saved.cacheId || crypto.randomUUID() };
+        }
+        await scanSources(false);
       }
 
       let miniSceneCount = 3;
@@ -1893,7 +2196,7 @@
         syncHeaderHeight();
       }
       headerToggle.addEventListener('click', () => {
-        if (directorySources.some(source => source.pending)) {
+        if (urlError || (folderView && !viewRoot) || directorySources.some(source => source.pending)) {
           setHeaderCollapsed(false);
           return;
         }
@@ -1920,6 +2223,9 @@
       });
       elements.rescanButton.addEventListener('click', () => scanSources(true));
       elements.sources.addEventListener('click', (event) => {
+        const action = event.target.closest('[data-view-action]')?.dataset.viewAction;
+        if (action === 'base') { chooseBaseFolder(); return; }
+        if (action === 'rescan') { scanSources(true); return; }
         const button = event.target.closest('[data-remove-source]');
         if (button) removeSource(button.dataset.removeSource);
       });
@@ -2034,6 +2340,8 @@
         for (const url of thumbUrls) URL.revokeObjectURL(url);
       });
 
+      window.addEventListener('hashchange', restoreFolders);
+      window.addEventListener('popstate', restoreFolders);
       applyPlayerMode();
       restoreFolders();
     })();
