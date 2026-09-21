@@ -617,11 +617,21 @@
       background-size: 220% 100%;
       animation: shimmer 1.2s linear infinite;
     }
-    .button.loading::after {
+    .folder-button-icon {
+      position: relative;
+      display: inline-grid;
+      place-items: center;
+      flex: 0 0 18px;
+      width: 18px;
+      height: 18px;
+      line-height: 1;
+    }
+    .button.loading .folder-button-plus { visibility: hidden; }
+    .button.loading .folder-button-icon::after {
       content: "";
-      width: 17px;
-      height: 17px;
-      margin-left: 10px;
+      position: absolute;
+      inset: 0;
+      box-sizing: border-box;
       border: 2px solid rgba(255,255,255,.25);
       border-top-color: #fff;
       border-radius: 50%;
@@ -691,7 +701,10 @@
       <div id="thumbnailSize" class="size-buttons" role="group" aria-label="サムネイルサイズ"><button class="button size-button" type="button" data-thumbnail-size="small" aria-label="サムネイル：小" aria-pressed="false" title="サムネイル：小"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.0" y="5" width="4.666666666666667" height="14" rx="1"/><rect x="8.666666666666668" y="5" width="4.666666666666667" height="14" rx="1"/><rect x="15.333333333333334" y="5" width="4.666666666666667" height="14" rx="1"/></svg></button><button class="button size-button" type="button" data-thumbnail-size="medium" aria-label="サムネイル：中" aria-pressed="false" title="サムネイル：中"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.0" y="5" width="8.0" height="14" rx="1"/><rect x="12.0" y="5" width="8.0" height="14" rx="1"/></svg></button><button class="button size-button" type="button" data-thumbnail-size="large" aria-label="サムネイル：大" aria-pressed="false" title="サムネイル：大"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.0" y="5" width="18.0" height="14" rx="1"/></svg></button></div>
     </div>
     <button class="button icon-button" id="rescanButton" type="button" title="再スキャン" disabled>↻</button>
-    <button class="button primary" id="folderButton" type="button">＋ <span class="button-label">フォルダを追加</span></button>
+    <button class="button primary" id="folderButton" type="button" aria-label="フォルダを追加" title="フォルダを追加">
+      <span class="folder-button-icon" aria-hidden="true"><span class="folder-button-plus">＋</span></span>
+      <span class="button-label">フォルダを追加</span>
+    </button>
     </div>
     <input id="folderFallback" type="file" webkitdirectory multiple hidden>
     </div>
@@ -848,6 +861,7 @@
         elements.folderButton.disabled = busy;
         elements.rescanButton.disabled = busy || !directorySources.length;
         elements.folderButton.classList.toggle('loading', busy);
+        elements.folderButton.setAttribute('aria-busy', String(busy));
         if (message) setLibrarySummary(message, true);
       }
 
