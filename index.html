@@ -684,6 +684,16 @@
     .tag-message { font-size: 13px; color: var(--muted); margin: 8px 0; overflow-wrap: anywhere; }
     #tagButton { flex: 0 0 44px; position: relative; }
     #tagButton.has-tags::after { content: ''; position: absolute; top: 7px; right: 7px; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+    .card .poster { display: block; width: 100%; padding: 0; cursor: pointer; color: inherit; }
+    .card:focus-within .play-badge { opacity: 1; transform: none; }
+    .card-tags { display: flex; align-items: center; gap: 6px; padding: 6px 10px 10px; min-width: 0; }
+    .video-tags-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
+    .edit-video-tags { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 6px; background: transparent; padding: 4px 7px; font-size: 11px; cursor: pointer; }
+    .video-tag-choices { display: grid; gap: 8px; margin: 12px 0; }
+    .video-tag-choice { display: flex; align-items: center; gap: 8px; overflow-wrap: anywhere; }
+    .video-tag-choice input { accent-color: #dbe1eb; }
+    .tag-transfer { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+    #videoTagTitle { overflow-wrap: anywhere; }
   </style>
 </head>
 <body>
@@ -741,7 +751,16 @@
     </form>
     <p class="tag-message" id="tagMessage" role="status"></p>
     <div class="tag-list" id="tagList"></div>
+    <div class="tag-transfer"><button class="button" id="exportVideoTags" type="button">割り当てを書き出す</button><button class="button" id="importVideoTags" type="button">割り当てを読み込む</button></div>
+    <input id="videoTagsFile" type="file" accept="application/json,.json" hidden>
+    <p class="tag-message" id="tagTransferMessage" role="status"></p>
     <p class="tag-message">タグの種類はURLに保存されます。変更後のURLをブックマークしてください。</p>
+  </dialog>
+  <dialog id="videoTagDialog" class="tag-dialog" aria-labelledby="videoTagHeading">
+    <div class="tag-dialog-heading"><h2 id="videoTagHeading">動画のタグ</h2><button class="button icon-button" id="closeVideoTagDialog" type="button" aria-label="動画のタグを閉じる">✕</button></div>
+    <p class="tag-message" id="videoTagTitle"></p>
+    <div class="video-tag-choices" id="videoTagChoices"></div>
+    <p class="tag-message" id="videoTagMessage" role="status"></p>
   </dialog>
   <main>
     <div class="notice" id="notice"></div>
@@ -874,6 +893,11 @@
       let directorySources = [];
       let folderView = null;
       let tagTypes = [];
+      let videoTagAssignments = new Map();
+      let videoTagsReady = false;
+      let videoTagsWritable = true;
+      let videoTagsSaveQueue = Promise.resolve();
+      let editingTagVideo = null;
       let folderStateInitialized = false;
       let viewRoot = null;
       let viewEpoch = 0;
@@ -1043,6 +1067,8 @@
       }
 
       function resetFolderView() {
+        $('#videoTagDialog').close();
+        editingTagVideo = null;
         viewEpoch += 1;
         scanSequence += 1;
         durationSortGeneration += 1;
@@ -1536,20 +1562,21 @@
           const folder = video.path.includes('/') ? video.path.slice(0, video.path.lastIndexOf('/')) : 'ルート';
           const selected = videoKey(video) === currentVideoKey;
           return `
-            <button class="card${selected ? ' selected' : ''}" type="button" data-index="${index}" title="${escapeHtml(video.path)}" aria-pressed="${selected}">
-              <div class="poster" style="--h:${hueFor(video.path)}">
+            <div class="card${selected ? ' selected' : ''}" role="group" data-index="${index}" title="${escapeHtml(video.path)}" aria-label="${escapeHtml(video.name)}">
+              <button class="poster" type="button" style="--h:${hueFor(video.path)}" aria-label="${escapeHtml(video.name)}を再生" aria-pressed="${selected}">
                 <div class="fallback-art"></div>
                 <img class="thumb" alt="" data-thumb-index="${index}">
                 <video class="preview-video" muted loop playsinline preload="metadata"></video>
                 <span class="play-badge">▶</span>
                 <span class="duration-badge" aria-label="再生時間">${durationCache.has(videoKey(video)) ? formatTime(durationCache.get(videoKey(video))) : ''}</span>
-              </div>
+              </button>
               <div class="card-scenes" data-mini-scene-index="${index}" data-scene-count="${miniSceneCount}" aria-label="代表シーン">
                 ${miniSceneRatios(miniSceneCount).map(ratio => `<span class="card-scene loading" data-mini-ratio="${ratio}" role="button" tabindex="0" aria-label="動画の${Math.round(ratio * 100)}%から再生" title="画像を読み込み中・クリックでこの位置から再生"></span>`).join('')}
               </div>
               <div class="card-title">${escapeHtml(displayTitle(video.name))}</div>
               <div class="card-meta">${escapeHtml(folder)} ・ ${formatBytes(video.file.size)}</div>
-            </button>`;
+              <div class="card-tags"><span class="video-tags-label">${escapeHtml(activeVideoTags(video).join('・'))}</span><button class="edit-video-tags" type="button" data-edit-video-tags aria-label="${escapeHtml(video.name)}のタグを編集">タグ</button></div>
+            </div>`;
         }).join('');
 
         const totalSize = displayedVideos.reduce((sum, video) => sum + video.file.size, 0);
@@ -2053,7 +2080,7 @@
         document.querySelectorAll('.card').forEach((card) => {
           const selected = displayedVideos[Number(card.dataset.index)] === video;
           card.classList.toggle('selected', selected);
-          card.setAttribute('aria-pressed', String(selected));
+          card.querySelector('.poster').setAttribute('aria-pressed', String(selected));
         });
         elements.player.play().catch(() => {});
         generateScenes(video);
@@ -2078,7 +2105,7 @@
         elements.contentLayout.classList.remove('player-open');
         document.querySelectorAll('.card.selected').forEach((card) => {
           card.classList.remove('selected');
-          card.setAttribute('aria-pressed', 'false');
+          card.querySelector('.poster').setAttribute('aria-pressed', 'false');
         });
       }
 
@@ -2222,6 +2249,189 @@
         await scanSources(false);
       }
 
+      // Local scope prevents the same relative path in different base folders sharing tags.
+      function videoTagPath(video) {
+        const source = directorySources.find(source => source.id === video.sourceId);
+        const prefix = viewRoot ? source?.relativeRoot : source?.name;
+        if (typeof prefix !== 'string') throw new Error('動画のフォルダ情報を確認できません。');
+        return FolderUrlCodec.normalize([`${prefix}/${video.relativePath}`])[0];
+      }
+
+      function videoTagKey(video) {
+        return JSON.stringify([viewRoot?.cacheId || `source:${video.sourceId}`, videoTagPath(video)]);
+      }
+
+      function activeVideoTags(video) {
+        return (videoTagAssignments.get(videoTagKey(video)) || []).filter(tag => tagTypes.includes(tag));
+      }
+
+      function refreshVideoTagLabels() {
+        elements.grid.querySelectorAll('.card').forEach(card => {
+          const video = displayedVideos[Number(card.dataset.index)];
+          if (!video) return;
+          const label = card.querySelector('.video-tags-label');
+          if (label) { label.textContent = activeVideoTags(video).join('・'); label.title = label.textContent; }
+        });
+      }
+
+      async function loadVideoTags() {
+        try {
+          const saved = await dbGet('settings', 'videoTagAssignments.v1');
+          if (saved !== undefined) {
+            if (!Array.isArray(saved)) throw new Error('保存形式が不正です。');
+            const validated = new Map();
+            for (const entry of saved) {
+              if (!Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== 'string') throw new Error('保存形式が不正です。');
+              const key = JSON.parse(entry[0]);
+              if (!Array.isArray(key) || key.length !== 2 || key.some(part => typeof part !== 'string')) throw new Error('保存形式が不正です。');
+              validated.set(entry[0], TagUrlCodec.normalize(entry[1]));
+            }
+            videoTagAssignments = validated;
+          }
+        } catch (_) {
+          // Avoid overwriting an existing database that could not be read.
+          videoTagsWritable = false;
+          $('#tagTransferMessage').textContent = '保存済みの割り当てを読み込めません。今回は一時保存になります。必要な変更は書き出してください。';
+        } finally { videoTagsReady = true; refreshVideoTagLabels(); }
+      }
+
+      function saveVideoTags(changes) {
+        const snapshot = [...changes].map(([key, tags]) => [key, [...tags]]);
+        const operation = videoTagsSaveQueue.catch(() => {}).then(async () => {
+          if (!videoTagsWritable) throw new Error('一時保存');
+          const db = await openDatabase();
+          // Merge only changed videos in one transaction so other tabs/lists survive.
+          await new Promise((resolve, reject) => {
+            const transaction = db.transaction('settings', 'readwrite');
+            const store = transaction.objectStore('settings');
+            const request = store.get('videoTagAssignments.v1');
+            request.onsuccess = () => {
+              try {
+                const merged = new Map(request.result || []);
+                for (const [key, tags] of snapshot) {
+                  if (tags.length) merged.set(key, tags); else merged.delete(key);
+                }
+                store.put([...merged], 'videoTagAssignments.v1');
+              } catch (_) { transaction.abort(); }
+            };
+            transaction.oncomplete = () => { db.close(); resolve(); };
+            transaction.onerror = transaction.onabort = () => { db.close(); reject(new Error('ブラウザ内への保存に失敗しました')); };
+          });
+        });
+        videoTagsSaveQueue = operation;
+        return operation;
+      }
+
+      function openVideoTags(video) {
+        if (!videoTagsReady || !video) return;
+        stopPreview();
+        editingTagVideo = video;
+        $('#videoTagTitle').textContent = video.path;
+        renderVideoTagChoices();
+        $('#videoTagMessage').textContent = videoTagsWritable ? '変更は自動で保存されます。' : '一時保存です。タグの管理から割り当てを書き出してください。';
+        $('#videoTagDialog').showModal();
+      }
+
+      function renderVideoTagChoices() {
+        if (!editingTagVideo) return;
+        const selected = activeVideoTags(editingTagVideo);
+        $('#videoTagChoices').innerHTML = tagTypes.length ? tagTypes.map((tag, index) => `<label class="video-tag-choice"><input type="checkbox" data-video-tag="${index}" ${selected.includes(tag) ? 'checked' : ''}><span>${escapeHtml(tag)}</span></label>`).join('') : '<p class="tag-message">ヘッダーの「タグの管理」から、先にタグの種類を登録してください。</p>';
+      }
+
+      function parseVideoTagsImport(value) {
+        if (!value || value.format !== 'localflix-video-tags' || value.version !== 1 || !Array.isArray(value.videos) || value.videos.length > 100000) throw new Error('対応するLocalFlixの割り当てファイルではありません。');
+        const types = TagUrlCodec.normalize(value.tagTypes);
+        const entries = new Map();
+        for (const item of value.videos) {
+          if (!item || typeof item.path !== 'string') throw new Error('動画のパスが不正です。');
+          const path = FolderUrlCodec.normalize([item.path])[0];
+          if (path === '.' || entries.has(path)) throw new Error('動画のパスが重複しているか不正です。');
+          const tags = TagUrlCodec.normalize(item.tags);
+          if (tags.some(tag => !types.includes(tag))) throw new Error('未定義のタグが含まれています。');
+          entries.set(path, tags);
+        }
+        return { types, entries };
+      }
+
+      function prepareVideoTagsImport(value) {
+        const parsed = parseVideoTagsImport(value);
+        const types = TagUrlCodec.normalize([...new Set([...tagTypes, ...parsed.types])]);
+        const available = new Map();
+        for (const video of allVideos) {
+          const path = videoTagPath(video);
+          if (!available.has(path)) available.set(path, new Set());
+          available.get(path).add(videoTagKey(video));
+        }
+        const updates = new Map();
+        let skipped = 0;
+        for (const [path, tags] of parsed.entries) {
+          const keys = available.get(path);
+          if (!keys || keys.size !== 1) { skipped++; continue; }
+          const key = [...keys][0];
+          updates.set(key, [...new Set([...(videoTagAssignments.get(key) || []), ...tags])].sort());
+          if (updates.get(key).length > 100) throw new Error('1本の動画のタグが100個を超えます。');
+        }
+        return { types, updates, skipped };
+      }
+
+      function exportVideoTagsData() {
+        const paths = new Map();
+        for (const video of allVideos) {
+          const path = videoTagPath(video), key = videoTagKey(video);
+          if (paths.has(path) && paths.get(path).key !== key) throw new Error('同名の対象フォルダがあるためパスを区別できません。基準フォルダを設定してから書き出してください。');
+          paths.set(path, { key, tags: activeVideoTags(video) });
+        }
+        return { format: 'localflix-video-tags', version: 1, tagTypes: [...tagTypes], videos: [...paths].filter(([, item]) => item.tags.length).map(([path, item]) => ({ path, tags: item.tags })) };
+      }
+
+      $('#closeVideoTagDialog').addEventListener('click', () => $('#videoTagDialog').close());
+      $('#videoTagDialog').addEventListener('close', () => { editingTagVideo = null; });
+      $('#videoTagChoices').addEventListener('change', async event => {
+        const input = event.target.closest('[data-video-tag]');
+        if (!input || !editingTagVideo || urlError) return;
+        const video = editingTagVideo, key = videoTagKey(video), tag = tagTypes[Number(input.dataset.videoTag)];
+        if (!tag) return;
+        const tags = new Set(videoTagAssignments.get(key) || []);
+        if (input.checked) tags.add(tag); else tags.delete(tag);
+        if (tags.size > 100) { input.checked = false; $('#videoTagMessage').textContent = '1本の動画に保存できるタグは100個までです。'; return; }
+        if (tags.size) videoTagAssignments.set(key, [...tags].sort()); else videoTagAssignments.delete(key);
+        refreshVideoTagLabels();
+        $('#videoTagMessage').textContent = '保存中…';
+        try { await saveVideoTags(new Map([[key, [...tags]]])); if (editingTagVideo === video) $('#videoTagMessage').textContent = '保存しました。'; }
+        catch (_) { if (editingTagVideo === video) $('#videoTagMessage').textContent = '保存できませんでした。変更はこの画面を開いている間のみ保持します。タグの管理から書き出してください。'; }
+      });
+      $('#exportVideoTags').addEventListener('click', () => {
+        if (!videoTagsReady || folderBusy || urlError) { $('#tagTransferMessage').textContent = '一覧の読み込みが終わってからお試しください。'; return; }
+        try {
+          const data = exportVideoTagsData();
+          const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+          const link = document.createElement('a');
+          link.href = url; link.download = 'localflix-video-tags.json'; document.body.append(link); link.click(); link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 10000);
+          $('#tagTransferMessage').textContent = `現在の一覧の${data.videos.length}本分を書き出しました。`;
+        } catch (error) { $('#tagTransferMessage').textContent = error.message; }
+      });
+      $('#importVideoTags').addEventListener('click', () => {
+        if (!videoTagsReady || folderBusy || urlError) { $('#tagTransferMessage').textContent = '一覧の読み込みが終わってからお試しください。'; return; }
+        $('#videoTagsFile').value = ''; $('#videoTagsFile').click();
+      });
+      $('#videoTagsFile').addEventListener('change', async () => {
+        const file = $('#videoTagsFile').files[0];
+        if (!file || !videoTagsReady || folderBusy || urlError) return;
+        const epoch = viewEpoch;
+        try {
+          if (file.size > 10 * 1024 * 1024) throw new Error('10MB以下のJSONファイルを選んでください。');
+          const value = JSON.parse(await file.text());
+          if (epoch !== viewEpoch || folderBusy || urlError) throw new Error('一覧が変更されました。もう一度読み込んでください。');
+          const result = prepareVideoTagsImport(value);
+          changeTagTypes(result.types);
+          for (const [key, tags] of result.updates) if (tags.length) videoTagAssignments.set(key, tags);
+          refreshVideoTagLabels();
+          await saveVideoTags(result.updates);
+          $('#tagTransferMessage').textContent = `${result.updates.size}本に取り込みました。対象外・区別できないパス：${result.skipped}本。`;
+        } catch (error) { $('#tagTransferMessage').textContent = `読み込みまたは保存できませんでした：${error.message}。保存に失敗した場合は書き出して保管してください。`; }
+      });
+
       function renderTagTypes() {
         $('#tagButton').disabled = urlError;
         $('#tagForm').querySelectorAll('input, button').forEach(node => { node.disabled = urlError; });
@@ -2230,6 +2440,8 @@
         $('#tagList').innerHTML = tagTypes.length ? tagTypes.map((name, index) => `
           <span class="source-chip"><span>${escapeHtml(name)}</span><button class="remove-source" type="button" data-remove-tag="${index}" aria-label="${escapeHtml(name)}を削除">✕</button></span>`).join('') : '<p class="tag-message">タグはまだ登録されていません。</p>';
         $('#tagMessage').textContent = '';
+        refreshVideoTagLabels();
+        if (editingTagVideo) renderVideoTagChoices();
       }
 
       function changeTagTypes(tags) {
@@ -2366,6 +2578,7 @@
       elements.grid.addEventListener('click', (event) => {
         const card = event.target.closest('.card');
         if (!card) return;
+        if (event.target.closest('[data-edit-video-tags]')) { openVideoTags(displayedVideos[Number(card.dataset.index)]); return; }
         const scene = event.target.closest('[data-mini-seek], [data-mini-ratio]');
         playVideo(Number(card.dataset.index), scene?.dataset.miniSeek !== undefined ? Number(scene.dataset.miniSeek) : 0, scene && scene.dataset.miniSeek === undefined ? Number(scene.dataset.miniRatio) : null);
         if (scene) requestAnimationFrame(() => elements.playerPane.scrollIntoView({ behavior: 'smooth', block: 'start' }));
@@ -2455,9 +2668,10 @@
       window.addEventListener('hashchange', restoreFolders);
       window.addEventListener('popstate', restoreFolders);
       applyPlayerMode();
-      restoreFolders();
+      loadVideoTags().then(restoreFolders);
     })();
   </script>
 </body>
 </html>
+
 
