@@ -924,6 +924,109 @@
       return { normalize, encode, decode };
     })();
   </script>
+  <script id="list-url-codec">
+    const ListUrlCodec = (() => {
+      const MAX_HASH_LENGTH = 100000;
+      const MAX_PAYLOAD_BYTES = 96 * 1024;
+
+      function canonical(folders, tags) {
+        const value = {
+          folders: folders === null ? null : FolderUrlCodec.normalize(folders),
+          tags: TagUrlCodec.normalize(tags)
+        };
+        // Keep the existing folder identity and its limits, independent of URL encoding.
+        if (value.folders !== null) FolderUrlCodec.encode(value.folders);
+        return value;
+      }
+
+      function legacyHash(folders, tags) {
+        const params = new URLSearchParams();
+        if (folders !== null) params.set('folders', FolderUrlCodec.encode(folders));
+        if (tags.length) params.set('tags', TagUrlCodec.encode(tags));
+        const query = params.toString();
+        return query ? `#${query}` : '';
+      }
+
+      function toBase64(bytes) {
+        return btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join('')).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      }
+
+      function fromBase64(token) {
+        if (!token || !/^[A-Za-z0-9_-]+$/.test(token) || token.length % 4 === 1) throw new Error('invalid base64');
+        const binary = atob(token.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - token.length % 4) % 4));
+        return Uint8Array.from(binary, char => char.charCodeAt(0));
+      }
+
+      async function transform(bytes, stream) {
+        // Read with a bound rather than allocating an unbounded decompressed response.
+        const reader = new Blob([bytes]).stream().pipeThrough(stream).getReader();
+        const chunks = [];
+        let length = 0;
+        try {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            length += value.byteLength;
+            if (length > MAX_PAYLOAD_BYTES) throw new Error('URLの情報が大きすぎます。');
+            chunks.push(value);
+          }
+        } catch (error) {
+          await reader.cancel().catch(() => {});
+          throw error;
+        } finally { reader.releaseLock(); }
+        const output = new Uint8Array(length);
+        let offset = 0;
+        for (const chunk of chunks) { output.set(chunk, offset); offset += chunk.byteLength; }
+        return output;
+      }
+
+      async function encodeHash(folders, tags) {
+        const value = canonical(folders, tags);
+        let shortest = legacyHash(value.folders, value.tags);
+        if (!shortest) return '';
+        // A compact tuple avoids repeated JSON field names; deflate deduplicates prefixes.
+        const bytes = new TextEncoder().encode(JSON.stringify([1, value.folders, value.tags]));
+        const plain = `#list=j.${toBase64(bytes)}`;
+        if (plain.length < shortest.length) shortest = plain;
+        if (typeof CompressionStream === 'function' && typeof DecompressionStream === 'function') {
+          try {
+            const compressed = await transform(bytes, new CompressionStream('deflate'));
+            const hash = `#list=z.${toBase64(compressed)}`;
+            if (hash.length < shortest.length) shortest = hash;
+          } catch (_) { /* The plain/legacy form works when compression is unavailable. */ }
+        }
+        return shortest;
+      }
+
+      async function decodeHash(hash) {
+        if (typeof hash !== 'string' || hash.length > MAX_HASH_LENGTH) throw new Error('invalid URL length');
+        const params = new URLSearchParams(hash.replace(/^#/, ''));
+        if (params.has('list')) {
+          if ([...params].length !== 1) throw new Error('mixed URL formats');
+          const match = /^([jz])\.([A-Za-z0-9_-]+)$/.exec(params.get('list'));
+          if (!match) throw new Error('unknown URL format');
+          let bytes = fromBase64(match[2]);
+          if (match[1] === 'z') {
+            if (typeof DecompressionStream !== 'function') {
+              const error = new Error('この圧縮URLを開くには、圧縮の読み込みに対応した新しいChrome / Edgeを使用してください。');
+              error.code = 'URL_COMPRESSION_UNAVAILABLE';
+              throw error;
+            }
+            bytes = await transform(bytes, new DecompressionStream('deflate'));
+          }
+          if (bytes.byteLength > MAX_PAYLOAD_BYTES) throw new Error('URL payload too large');
+          const value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+          if (!Array.isArray(value) || value.length !== 3 || value[0] !== 1) throw new Error('unknown URL version');
+          return canonical(value[1], value[2]);
+        }
+        if (params.getAll('folders').length > 1 || params.getAll('tags').length > 1 || [...params.keys()].some(key => !['folders', 'tags'].includes(key))) throw new Error('invalid legacy URL');
+        return canonical(params.has('folders') ? FolderUrlCodec.decode(params.get('folders')) : null,
+          params.has('tags') ? TagUrlCodec.decode(params.get('tags')) : []);
+      }
+
+      return { legacyHash, encodeHash, decodeHash };
+    })();
+  </script>
   <script>
     (() => {
       'use strict';
@@ -973,6 +1076,7 @@
       let viewEpoch = 0;
       let scanSequence = 0;
       let appliedHash = null;
+      let urlRevision = 0;
       let urlError = false;
       let folderBusy = false;
       let viewStorageWarning = '';
@@ -1169,15 +1273,31 @@
         showNotice();
       }
 
-      function writeFolderHash(token, replace = false) {
+      function setFolderHash(hash, replace) {
         const url = new URL(location.href);
-        const params = new URLSearchParams();
-        if (token !== null) params.set('folders', token);
-        if (tagTypes.length) params.set('tags', TagUrlCodec.encode(tagTypes));
-        url.hash = params.toString();
+        url.hash = hash;
         appliedHash = url.hash;
+        if (location.hash === url.hash) return;
         try { history[replace ? 'replaceState' : 'pushState'](null, '', url.href); }
         catch (_) { if (replace) location.replace(url.href); else location.hash = url.hash; }
+      }
+
+      async function compactFolderHash(folders, tags, revision, expectedHash) {
+        try {
+          const hash = await ListUrlCodec.encodeHash(folders, tags);
+          // Compression must not overwrite a newer edit, back/forward, or another URL.
+          if (revision !== urlRevision || location.hash !== expectedHash) return;
+          setFolderHash(hash, true);
+        } catch (_) { /* The current URL remains usable if compaction fails. */ }
+      }
+
+      function writeFolderHash(token, replace = false) {
+        const folders = token === null ? null : FolderUrlCodec.decode(token);
+        const tags = [...tagTypes];
+        const revision = ++urlRevision;
+        // Publish a complete URL immediately, then replace that same history entry.
+        setFolderHash(ListUrlCodec.legacyHash(folders, tags), replace);
+        void compactFolderHash(folders, tags, revision, location.hash);
       }
 
       async function rememberViewRoot(token, root) {
@@ -2295,14 +2415,15 @@
 
       async function restoreFolders() {
         if (appliedHash === location.hash) return;
-        appliedHash = location.hash;
+        const expectedHash = location.hash;
+        const revision = ++urlRevision;
+        appliedHash = expectedHash;
         let folders = null, tags;
         try {
-          const params = new URLSearchParams(location.hash.slice(1));
-          if (params.getAll('folders').length > 1 || params.getAll('tags').length > 1 || [...params.keys()].some(key => !['folders', 'tags'].includes(key))) throw new Error('URLの形式が不正です。');
-          if (params.has('folders')) folders = FolderUrlCodec.decode(params.get('folders'));
-          tags = params.has('tags') ? TagUrlCodec.decode(params.get('tags')) : [];
-        } catch (_) {
+          ({ folders, tags } = await ListUrlCodec.decodeHash(expectedHash));
+          if (revision !== urlRevision || location.hash !== expectedHash) return;
+        } catch (error) {
+          if (revision !== urlRevision || location.hash !== expectedHash) return;
           resetFolderView();
           folderView = null;
           viewRoot = null;
@@ -2313,14 +2434,14 @@
           updateSourceDisplay();
           setBusy(false);
           setHeaderCollapsed(false);
-          showNotice('URLのフォルダ・タグ情報が壊れているか、未対応の形式です。元のURLを確認するか、#以降を削除して開き直してください。');
+          showNotice(error?.code === 'URL_COMPRESSION_UNAVAILABLE' ? error.message : 'URLのフォルダ・タグ情報が壊れているか、未対応の形式です。元のURLを確認するか、#以降を削除して開き直してください。');
           return;
         }
         const token = folders === null ? null : FolderUrlCodec.encode(folders);
         const onlyTagsChanged = folderStateInitialized && !urlError && token === (folderView?.token ?? null);
         tagTypes = tags;
         renderTagTypes();
-        writeFolderHash(token, true);
+        void compactFolderHash(folders, [...tags], revision, expectedHash);
         if (onlyTagsChanged) return;
         resetFolderView();
         const epoch = viewEpoch;
@@ -2942,6 +3063,7 @@
   </script>
 </body>
 </html>
+
 
 
 
